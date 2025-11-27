@@ -86,8 +86,6 @@ def home():
 
         <div class="info-section">
             <p><strong>系統狀態:</strong> <span style="color: green;">● 線上</span></p>
-            <div class="variable"><span class="key">TRELLO_API_KEY:</span> {trello_api_key_masked}</div>
-            <div class="variable"><span class="key">TRELLO_TOKEN:</span> {trello_token_masked}</div>
         </div>
     </div>
 
