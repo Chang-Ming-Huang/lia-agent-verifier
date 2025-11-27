@@ -1,5 +1,5 @@
 # 使用官方 Playwright 映像檔 (包含 Python 環境與瀏覽器依賴)
-FROM mcr.microsoft.com/playwright/python:v1.56.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 
 # 設定工作目錄
 WORKDIR /app
