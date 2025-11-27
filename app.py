@@ -3,6 +3,7 @@ import os
 import io
 import ddddocr
 import requests
+import base64
 from playwright.sync_api import sync_playwright
 from urllib.parse import quote
 
@@ -25,9 +26,7 @@ def mask_sensitive_data(data):
 def home():
     # 讀取環境變數僅用於顯示資訊
     user_name = os.environ.get('MY_NAME', 'Guest')
-    trello_api_key_masked = mask_sensitive_data(os.environ.get('TRELLO_API_KEY'))
-    trello_token_masked = mask_sensitive_data(os.environ.get('TRELLO_TOKEN'))
-
+    
     return f"""
 <!DOCTYPE html>
 <html>
@@ -60,6 +59,14 @@ def home():
         
         .result-img {{ max-width: 100%; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 15px; }}
         
+        /* Email 範本區塊樣式 */
+        .email-section {{ margin-top: 30px; text-align: left; border-top: 2px dashed #eee; padding-top: 20px; }}
+        .email-box {{ background-color: #f1f3f5; padding: 15px; border-radius: 5px; margin-bottom: 15px; position: relative; }}
+        .email-label {{ font-weight: bold; color: #555; display: block; margin-bottom: 5px; }}
+        .email-content {{ white-space: pre-wrap; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.95em; background: white; padding: 10px; border: 1px solid #ddd; border-radius: 3px; }}
+        .copy-btn {{ position: absolute; top: 10px; right: 10px; padding: 5px 10px; font-size: 12px; background-color: #6c757d; }}
+        .copy-btn:hover {{ background-color: #5a6268; }}
+        
         .info-section {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 0.9em; color: #666; }}
         .variable {{ margin-bottom: 5px; }}
         .key {{ font-weight: bold; color: #555; }}
@@ -90,6 +97,15 @@ def home():
     </div>
 
     <script>
+        function copyToClipboard(elementId) {{
+            const text = document.getElementById(elementId).innerText;
+            navigator.clipboard.writeText(text).then(() => {{
+                alert('已複製到剪貼簿！');
+            }}).catch(err => {{
+                console.error('複製失敗', err);
+            }});
+        }}
+
         async function performQuery() {{
             const input = document.getElementById('query-input').value.trim();
             if (!input) return alert('請輸入內容！');
@@ -106,32 +122,25 @@ def home():
 
             try {{
                 // 呼叫後端 API
-                // 注意：這裡我們回傳的是圖片二進位流，所以 fetch 後要轉 blob
-                // 這裡的 {{}} 是 f-string 的轉義，最終會輸出為 JS 的 ${{}}
                 const response = await fetch(`/check?id=${{encodeURIComponent(input)}}`);
+                const data = await response.json(); // 改為解析 JSON
                 
                 loading.style.display = 'none';
                 resultArea.style.display = 'block';
                 btn.disabled = false;
 
-                if (response.ok) {{
+                if (data.success) {{
                     // 成功：顯示圖片和成功訊息
-                    const blob = await response.blob();
-                    const imgUrl = URL.createObjectURL(blob);
-                    
-                    // 從檔名判斷狀態 (header Content-Disposition)
-                    const contentDisposition = response.headers.get('Content-Disposition');
-                    let filename = '查詢結果.png';
-                    if (contentDisposition && contentDisposition.indexOf('filename=') !== -1) {{
-                         filename = decodeURIComponent(contentDisposition.split('filename=')[1].replace(/"/g, ''));
-                    }}
+                    const filename = data.filename;
+                    const imgUrl = data.image;
+                    const email = data.email;
 
                     let statusClass = 'status-success';
                     let statusText = '查詢成功';
-                    if (filename.includes('失敗')) {{
+                    if (filename.includes('資格不符')) {{ // 檔名已改為資格不符
                         statusClass = 'status-error';
                         statusText = '審核失敗 (超過一年)';
-                    }} else if (filename.includes('無效')) {{
+                    }} else if (filename.includes('無效證號')) {{ // 檔名已改為無效證號
                         statusClass = 'status-error';
                         statusText = '無效的證號';
                     }}
@@ -144,14 +153,29 @@ def home():
                         <img src="${{imgUrl}}" class="result-img" alt="查詢結果截圖" />
                         <br/><br/>
                         <a href="${{imgUrl}}" download="${{filename}}" style="color: #007bff; text-decoration: none;">下載截圖</a>
+                        
+                        <div class="email-section">
+                            <h3>📧 回信範本</h3>
+                            
+                            <div class="email-box">
+                                <span class="email-label">信件標題：</span>
+                                <div id="email-subject" class="email-content">${{email.subject}}</div>
+                                <button class="copy-btn" onclick="copyToClipboard('email-subject')">複製</button>
+                            </div>
+                            
+                            <div class="email-box">
+                                <span class="email-label">信件內文：</span>
+                                <div id="email-body" class="email-content">${{email.body}}</div>
+                                <button class="copy-btn" onclick="copyToClipboard('email-body')">複製</button>
+                            </div>
+                        </div>
                     `;
                 }} else {{
                     // 失敗：顯示錯誤訊息
-                    const errorText = await response.text();
                     resultArea.innerHTML = `
                         <div class="status-box status-error">
                             <strong>查詢失敗</strong><br/>
-                            ${{errorText}}
+                            ${{data.message || '未知錯誤'}}
                         </div>
                     `;
                 }}
@@ -176,22 +200,21 @@ def home():
 def check_registration():
     input_value = request.args.get('id')
     if not input_value:
-        return "請提供 id 參數", 400
+        return jsonify({"success": False, "message": "請提供 id 參數"}), 400
     
     trello_card_id = None
     reg_no = input_value
 
     try:
         # 1. 解析輸入 (判斷是否為 Trello 網址)
-        # 如果 trello_utils 發生錯誤 (如 Key 未設定)，這裡會直接拋出例外，我們讓外層 try-except 捕獲
         try:
              reg_no, trello_card_id = trello_utils.resolve_trello_input(input_value)
         except ValueError as ve:
-             return f"輸入解析錯誤: {str(ve)}", 400
+             return jsonify({"success": False, "message": f"輸入解析錯誤: {str(ve)}"}), 400
 
         # 2. 驗證證號格式
         if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
-            return f"無效的登錄字號格式: {reg_no}", 400
+            return jsonify({"success": False, "message": f"無效的登錄字號格式: {reg_no}"}), 400
         
         # 自動補零
         if len(reg_no) < 10:
@@ -209,6 +232,10 @@ def check_registration():
                 # 查詢成功
                 filename = result.get('suggested_filename', f'{reg_no}_result.png')
                 
+                # 將 bytes 轉為 base64 字串回傳
+                img_base64 = base64.b64encode(result['screenshot_bytes']).decode('utf-8')
+                img_data_url = f"data:image/png;base64,{img_base64}"
+                
                 # 4. 如果有 Trello 卡片 ID，回傳結果到 Trello
                 if trello_card_id:
                     try:
@@ -221,22 +248,22 @@ def check_registration():
                     except Exception as te:
                         print(f"Trello 回傳失敗 (但不影響主流程): {te}")
 
-                # 回傳圖片給前端
-                return send_file(
-                    io.BytesIO(result['screenshot_bytes']),
-                    mimetype='image/png',
-                    as_attachment=False,
-                    download_name=filename
-                )
+                # 回傳 JSON
+                return jsonify({
+                    "success": True,
+                    "image": img_data_url,
+                    "filename": filename,
+                    "email": result.get("email_info", {})
+                })
             else:
-                return f"查詢失敗或查無資料: {result['msg']}", 404
+                return jsonify({"success": False, "message": f"查詢失敗或查無資料: {result['msg']}"}), 404
                 
         finally:
             if bot:
                 bot.close()
 
     except Exception as e:
-        return f"系統發生錯誤: {e}", 500
+        return jsonify({"success": False, "message": f"系統發生錯誤: {e}"}), 500
 
 @app.route('/ocr')
 def test_ocr_route():

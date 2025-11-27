@@ -123,13 +123,6 @@ class LIAQueryBot:
     def _generate_screenshot_filename(self, registration_number: str, result_status: str) -> str:
         """
         根據查詢結果生成截圖檔名
-        
-        Args:
-            registration_number: 登錄字號
-            result_status: 查詢結果的狀態 (e.g., "not_found", "found_valid", "found_invalid")
-            
-        Returns:
-            截圖檔名
         """
         base_name = f"{registration_number}"
         
@@ -140,27 +133,90 @@ class LIAQueryBot:
             if date_tuple:
                 year, month, day = date_tuple
                 date_str = f"{year}_{month:02d}_{day:02d}"
-                return f"{base_name}_審核成功_{date_str}.png"
+                return f"{base_name}_審核通過_{date_str}.png"
             else:
-                return f"{base_name}_審核成功_日期未知.png"
+                return f"{base_name}_審核通過_日期未知.png"
         elif result_status == "found_invalid":
             date_tuple = self._extract_registration_date()
             if date_tuple:
                 year, month, day = date_tuple
                 date_str = f"{year}_{month:02d}_{day:02d}"
-                return f"{base_name}_審核失敗_{date_str}.png"
+                return f"{base_name}_資格不符_{date_str}.png"
             else:
-                return f"{base_name}_審核失敗_日期未知.png"
+                return f"{base_name}_資格不符_日期未知.png"
         else: # unknown 或 error
             return f"{base_name}_無效證號.png"
 
+    def _generate_email_template(self, status: str) -> dict:
+        """根據狀態生成回信範本"""
+        today = datetime.now()
+        one_year_ago = today - timedelta(days=365)
+        # 格式化為 "113年5月13日" (民國年)
+        one_year_ago_str = f"{one_year_ago.year - 1911}年{one_year_ago.month}月{one_year_ago.day}日"
+
+        templates = {
+            "found_valid": {
+                "subject": "Finfo 年繳方案付款通知 (審核通過，提供您刷卡升級連結)",
+                "body": f"""您好,
+
+我是 Finfo 客服團隊的章銘，我會協助您這次的年繳方案申請，感謝您申請年繳方案。
+我們已確認您符合優惠資格，以下是您的付款連結：
+
+[粗體文字：TODO，附上付款連結]
+
+請於三天內完成付款 (付款連結將於三天後失效)。
+收到款項後的一個工作天內，我們會為您升級帳號權限，並再次以 Email 通知您。
+
+如有任何問題，隨時回覆此信與我們聯繫。
+
+Finfo 客服團隊 敬上"""
+            },
+            "found_invalid": {
+                "subject": "Finfo 有收到您的年繳方案申請，您並非一年內的新進業務，可考慮月繳方案",
+                "body": f"""您好,
+
+我是 Finfo 客服團隊的章銘，感謝您申請年繳方案。
+
+目前年繳方案屬於測試階段，第一階段先開放給新進一年的業務員。
+
+也就是要在 {one_year_ago_str} 之後登錄的新進業務員，會是這次新進業務年繳方案的測試對象。
+
+根據您提供的資料，您的登錄日期是比較早期的，不符合針對新進業務的資格，不好意思。
+
+若您對年繳方案有興趣，可以等之後 Finfo 正式推出年繳方案後再填寫即可，感謝您的來信申請。
+
+Finfo 客服團隊 敬上"""
+            },
+            "not_found": {
+                "subject": "Finfo 有收到您的年繳方案申請，想詢問您的登錄證字號",
+                "body": """您好,
+
+我是 Finfo 客服團隊的章銘，感謝您申請年繳方案。
+根據您提供的登錄證字號，於 壽險公會 無法查詢到資格，
+請再次確認提供的資料是否正確，再次感謝您的申請與支持。
+
+如有任何問題，隨時回覆此信與我們聯繫。
+
+如果有其他任何網站上的操作問題，也都歡迎您在此封信件中一併提出，我們會盡快協助，感謝您！
+
+Finfo 客服團隊 敬上"""
+            }
+        }
+        
+        # 預設回傳 not_found 的模板
+        if status in templates:
+            return templates[status]
+        else:
+            return templates["not_found"]
+
     def perform_query(self, reg_no: str, max_retries=5):
-        """執行業務員登錄查詢"""
+        """執行查詢動作 (含驗證碼重試機制)"""
         final_result = {
             "success": False,
             "status": "error",
             "msg": "未完成查詢",
-            "screenshot_path": None
+            "screenshot_path": None,
+            "email_info": None
         }
 
         print(f"🌐 前往查詢頁面: {reg_no}")
@@ -176,7 +232,7 @@ class LIAQueryBot:
             self.page.locator('#iusr').fill(reg_no)
             self.page.locator('input[name="captchaAnswer"]').fill(captcha_text)
             
-            # 3. 處理 Alert 對話框 (必須在點擊前設定)
+            # 3. 處理 Alert 對話框
             dialog_message = None
             def handle_dialog(dialog):
                 nonlocal dialog_message
@@ -224,14 +280,20 @@ class LIAQueryBot:
         
         # 截取最終結果頁面 (記憶體截圖)
         if final_result["success"]:
-            # 產生建議的檔名 (僅供參考，不寫入檔案)
             suggested_filename = self._generate_screenshot_filename(reg_no, final_result["status"])
-            
-            # 取得截圖的 bytes
-            screenshot_bytes = self.page.screenshot(full_page=True)
+            # 截取最終結果頁面 (記憶體截圖)，只截取頁面上方 60%
+            page_height = self.page.evaluate("document.body.scrollHeight")
+            clip_height = page_height * 0.6 # 截取 60% 的高度
+
+            screenshot_bytes = self.page.screenshot(
+                clip={"x": 0, "y": 0, "width": self.page.viewport_size['width'], "height": clip_height}
+            )
             
             final_result["screenshot_bytes"] = screenshot_bytes
             final_result["suggested_filename"] = suggested_filename
             print(f"📸 截圖已擷取 (記憶體中), 建議檔名: {suggested_filename}")
+
+        # 生成 Email 範本
+        final_result["email_info"] = self._generate_email_template(final_result["status"])
 
         return final_result
