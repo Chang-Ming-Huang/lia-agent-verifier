@@ -11,6 +11,8 @@
 *   讀取環境變數並動態顯示內容。
 *   遮罩敏感資訊 (如 API Key)。
 *   整合 Playwright 進行網頁截圖並即時回傳。
+*   **整合 ddddocr 進行驗證碼識別。**
+*   **將以上所有功能容器化 (Docker) 佈署。**
 
 ---
 
@@ -77,35 +79,69 @@ secret = os.environ.get('MY_SECRET', 'DefaultValue')
 建立 `Dockerfile`，基於官方 Playwright 映像檔打包應用：
 
 ```dockerfile
-# 使用官方 Playwright 映像檔 (包含 Python + 瀏覽器 + 系統依賴)
+# 使用官方 Playwright 映像檔 (包含 Python 環境與瀏覽器依賴)
 # 選擇穩定的版本標籤
 FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 
 WORKDIR /app
 
-# 安裝 Python 依賴
+# 安裝 ddddocr 所需的額外系統依賴 (例如 libgl1-mesa-glx for OpenCV)
+# Playwright 映像檔是基於 Ubuntu (jammy)，所以使用 apt-get
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
+
+# 複製 requirements.txt 並安裝 Python 套件
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 安裝 Chromium 瀏覽器
+# 安裝 Chromium 瀏覽器 (雖然基礎映像檔已有，此步確保安裝到位)
 RUN playwright install chromium
 
-# 複製程式碼
+# 複製所有程式碼到工作目錄
 COPY . .
 
-# 啟動 Gunicorn
+# 設定環境變數 (防止 Python 產生 .pyc 檔，並確保輸出不緩衝)
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 啟動 Gunicorn 伺服器
+# Render 會自動提供 PORT 環境變數，我們讓 Gunicorn 監聽該 Port
 CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
 ```
 
-### 4.3 Render Docker 佈署設定
+### 4.3 `.dockerignore`
+建立 `.dockerignore` 排除不需要打包到 Docker 映像檔的檔案 (如 `venv/`, `.git/`)。
+
+### 4.4 Render Docker 佈署設定
 *   **Runtime**: 切換為 **Docker** (Render 會自動偵測 Dockerfile)。
 *   **結果**: 成功建置並運行，解決了權限與依賴問題。
 
 ---
 
-## 5. 核心概念解析
+## 5. ddddocr (OCR) 整合
 
-### 5.1 截圖是怎麼回傳的？ (Memory Stream)
+### 5.1 本機安裝
+```powershell
+pip install ddddocr requests
+```
+*(注意：`requests` 庫用於下載圖片或與 API 互動)*
+
+### 5.2 `app.py` 中的整合
+*   匯入 `ddddocr` 和 `requests`。
+*   初始化 `ocr = ddddocr.DdddOcr()` (建議作為全域變數，避免重複載入模型)。
+*   **`/ocr` 路由邏輯**:
+    1.  Playwright 前往目標網頁 (例如：`https://public.liaroc.org.tw/lia-public/...`)。
+    2.  利用 CSS Selector (例如 `img#captcha`) 定位驗證碼圖片元素。
+    3.  `captcha_element.screenshot()` 直接截取該元素。
+    4.  將截圖的位元組數據傳給 `ocr.classification(captcha_bytes)` 進行識別。
+    5.  將結果和圖片預覽回傳至網頁。
+
+---
+
+## 6. 核心概念解析
+
+### 6.1 截圖是怎麼回傳的？ (Memory Stream)
 在 `app.py` 中：
 ```python
 # 1. 截圖不存檔，直接回傳二進位數據 (bytes)
@@ -117,13 +153,13 @@ return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
 ```
 *   **優點**: 不佔用伺服器硬碟空間 (Disk I/O)，速度快，適合動態生成內容。
 
-### 5.2 Docker 的優勢
+### 6.2 Docker 的優勢
 *   **一致性**: "Build once, run anywhere"。在本機 Docker 能跑，推上雲端就能跑。
 *   **完整控制**: 不受雲端供應商預設環境 (如 Python 版本、系統函式庫) 的限制。
 
 ---
 
-## 6. 常用指令備忘
+## 7. 常用指令備忘
 
 *   **啟動虛擬環境**: `.\venv\Scripts\Activate.ps1`
 *   **本機執行 Flask**: `python app.py`

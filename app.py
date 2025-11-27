@@ -1,13 +1,16 @@
 from flask import Flask, request, send_file
 import os
-from playwright.sync_api import sync_playwright
 import io
 import ddddocr
 import requests
+from playwright.sync_api import sync_playwright
+
+# 引入我們剛剛寫好的機器人
+from lia_bot import LIAQueryBot
 
 app = Flask(__name__)
 
-# 初始化 OCR (全域變數，避免每次請求都重新載入模型)
+# 初始化 OCR (保留供 /ocr 路由測試用)
 ocr = ddddocr.DdddOcr()
 
 # 輔助函式：用於遮罩敏感資訊
@@ -42,27 +45,82 @@ def home():
         .variable {{ margin-bottom: 0.8em; padding: 0.5em; background-color: #fff; border-left: 5px solid #007bff; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }}
         .key {{ font-weight: bold; margin-right: 0.5em; color: #0056b3; }}
         .value {{ font-family: 'Courier New', Courier, monospace; color: #555; }}
+        .api-link {{ display: inline-block; margin-top: 1em; padding: 10px 15px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; }}
+        .api-link:hover {{ background-color: #218838; }}
     </style>
 </head>
 <body>
-    <h1>環境變數測試頁面</h1>
-    <p>Hello, <span class="value">{user_name}</span>! 這是一個使用多個環境變數的測試。</p>
+    <h1>業務員登錄查詢 API</h1>
+    <p>Hello, <span class="value">{user_name}</span>! 系統運行正常。</p>
 
     <div class="variable"><span class="key">TRELLO_API_KEY:</span> <span class="value">{trello_api_key_masked}</span></div>
     <div class="variable"><span class="key">TRELLO_TOKEN:</span> <span class="value">{trello_token_masked}</span></div>
     <div class="variable"><span class="key">TRELLO_BOARD_ID:</span> <span class="value">{trello_board_id}</span></div>
     <div class="variable"><span class="key">TRIGGER_KEYWORD:</span> <span class="value">{trigger_keyword}</span></div>
 
-    <p style="font-size: 0.8em; color: #777;">敏感資訊已進行遮罩處理。</p>
     <hr/>
-    <h2>Playwright 截圖功能測試</h2>
-    <p>請嘗試訪問 <a href="/screenshot?url=https://www.google.com">/screenshot?url=https://www.google.com</a> 來測試截圖。</p>
-    <hr/>
-    <h2>OCR 驗證碼識別測試</h2>
-    <p>請嘗試訪問 <a href="/ocr">/ocr</a> 來測試識別一張範例驗證碼。</p>
+    <h2>功能測試區</h2>
+    <p>
+        <a href="/ocr" class="api-link" style="background-color: #007bff;">測試 1: 驗證碼截圖與識別 (/ocr)</a>
+        <br/>
+        <small>單純測試能否連上網站並抓取驗證碼</small>
+    </p>
+    <p>
+        <a href="/check?id=0113403577" class="api-link">測試 2: 完整查詢流程 (/check?id=...)</a>
+        <br/>
+        <small>輸入證號，自動查詢並回傳結果截圖 (檔案名會包含審核結果)</small>
+    </p>
 </body>
 </html>
 """
+
+@app.route('/check')
+def check_registration():
+    reg_no = request.args.get('id')
+    if not reg_no:
+        return "請提供 id 參數 (登錄字號)", 400
+    
+    # 簡單驗證格式 (8-10位數字)
+    if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
+        return f"登錄字號格式錯誤: {reg_no}", 400
+        
+    # 自動補零
+    if len(reg_no) < 10:
+        reg_no = reg_no.zfill(10)
+
+    bot = None
+    try:
+        # 初始化機器人
+        bot = LIAQueryBot(headless=True)
+        bot.start()
+        
+        # 執行查詢
+        result = bot.perform_query(reg_no)
+        
+        if result['success'] and result.get('screenshot_bytes'):
+            # 查詢成功，回傳截圖
+            # 設定檔名讓瀏覽器下載時能看到結果
+            filename = result.get('suggested_filename', f'{reg_no}_result.png')
+            
+            # 為了讓中文檔名正常顯示，這是一個小技巧
+            from urllib.parse import quote
+            encoded_filename = quote(filename)
+            
+            return send_file(
+                io.BytesIO(result['screenshot_bytes']),
+                mimetype='image/png',
+                as_attachment=False, # 設為 False 可以在瀏覽器直接看，設為 True 會強制下載
+                download_name=filename
+            )
+        else:
+            # 查詢失敗或查無資料
+            return f"查詢失敗或查無資料: {result['msg']}", 404
+            
+    except Exception as e:
+        return f"系統發生錯誤: {e}", 500
+    finally:
+        if bot:
+            bot.close()
 
 @app.route('/ocr')
 def test_ocr_route():
@@ -121,5 +179,5 @@ def take_screenshot():
     except Exception as e:
         return f"截圖失敗: {e}", 500
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
