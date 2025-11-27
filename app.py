@@ -2,8 +2,13 @@ from flask import Flask, request, send_file
 import os
 from playwright.sync_api import sync_playwright
 import io
+import ddddocr
+import requests
 
 app = Flask(__name__)
+
+# 初始化 OCR (全域變數，避免每次請求都重新載入模型)
+ocr = ddddocr.DdddOcr()
 
 # 輔助函式：用於遮罩敏感資訊
 def mask_sensitive_data(data):
@@ -52,9 +57,49 @@ def home():
     <hr/>
     <h2>Playwright 截圖功能測試</h2>
     <p>請嘗試訪問 <a href="/screenshot?url=https://www.google.com">/screenshot?url=https://www.google.com</a> 來測試截圖。</p>
+    <hr/>
+    <h2>OCR 驗證碼識別測試</h2>
+    <p>請嘗試訪問 <a href="/ocr">/ocr</a> 來測試識別一張範例驗證碼。</p>
 </body>
 </html>
 """
+
+@app.route('/ocr')
+def test_ocr_route():
+    target_url = "https://public.liaroc.org.tw/lia-public/DIS/Servlet/RD?returnUrl=..%2F..%2FindexUsr.jsp&xml=%3C%3Fxml+version%3D%221.0%22+encoding%3D%22BIG5%22%3F%3E%3CRoot%3E%3CForm%3E%3CreturnUrl%3E..%2F..%2FindexUsr.jsp%3C%2FreturnUrl%3E%3Cxml%2F%3E%3Cfuncid%3EPGQ010++++++++++++++++++++++++%3C%2Ffuncid%3E%3CprogId%3EPGQ010S01%3C%2FprogId%3E%3C%2FForm%3E%3C%2FRoot%3E&funcid=PGQ010++++++++++++++++++++++++&progId=PGQ010S01"
+    
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # 前往目標網頁
+            page.goto(target_url)
+            
+            # 等待驗證碼圖片載入
+            captcha_element = page.wait_for_selector('img#captcha', state='visible', timeout=10000)
+            
+            # 截取驗證碼圖片元素
+            captcha_bytes = captcha_element.screenshot()
+            
+            browser.close()
+            
+            # 進行識別
+            result = ocr.classification(captcha_bytes)
+            
+            # 將截圖的 bytes 轉換成 base64 顯示在網頁上
+            import base64
+            captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')
+            
+            return f"""
+            <h1>OCR 識別測試 (目標網頁)</h1>
+            <p>目標網頁: <a href="{target_url}" target="_blank">{target_url}</a></p>
+            <p>識別結果: <strong>{result}</strong></p>
+            <p>截圖的驗證碼:</p>
+            <img src="data:image/png;base64,{captcha_base64}" alt="驗證碼圖片" />
+            """
+    except Exception as e:
+        return f"OCR 識別失敗: {e}", 500
 
 @app.route('/screenshot')
 def take_screenshot():

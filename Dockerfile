@@ -4,6 +4,12 @@ FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 # 設定工作目錄
 WORKDIR /app
 
+# 安裝 ddddocr 所需的額外系統依賴
+# Playwright 映像檔是基於 Ubuntu (jammy)，所以使用 apt-get
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
+
 # 複製 requirements.txt 並安裝 Python 套件
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
