@@ -3,3 +3,4 @@ gunicorn
 playwright
 ddddocr
 requests
+python-dotenv

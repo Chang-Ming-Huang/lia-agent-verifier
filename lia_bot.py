@@ -152,7 +152,7 @@ class LIAQueryBot:
             else:
                 return f"{base_name}_審核失敗_日期未知.png"
         else: # unknown 或 error
-            return f"{base_name}_查詢異常.png"
+            return f"{base_name}_無效證號.png"
 
     def perform_query(self, reg_no: str, max_retries=5):
         """執行業務員登錄查詢"""

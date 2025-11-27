@@ -2,4 +2,4 @@ venv/
 __pycache__/
 *.pyc
 
-lia_query_automation.py
+.env
