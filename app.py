@@ -1,5 +1,7 @@
-from flask import Flask
+from flask import Flask, request, send_file
 import os
+from playwright.sync_api import sync_playwright
+import io
 
 app = Flask(__name__)
 
@@ -47,9 +49,32 @@ def home():
     <div class="variable"><span class="key">TRIGGER_KEYWORD:</span> <span class="value">{trigger_keyword}</span></div>
 
     <p style="font-size: 0.8em; color: #777;">敏感資訊已進行遮罩處理。</p>
+    <hr/>
+    <h2>Playwright 截圖功能測試</h2>
+    <p>請嘗試訪問 <a href="/screenshot?url=https://www.google.com">/screenshot?url=https://www.google.com</a> 來測試截圖。</p>
 </body>
 </html>
 """
+
+@app.route('/screenshot')
+def take_screenshot():
+    target_url = request.args.get('url', 'https://example.com')
+    if not target_url.startswith('http://') and not target_url.startswith('https://'):
+        target_url = 'https://' + target_url # 預設使用 HTTPS
+
+    try:
+        with sync_playwright() as p:
+            # 在伺服器上務必使用 headless=True
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(target_url)
+            screenshot_bytes = page.screenshot() # 直接獲取截圖的位元組
+            browser.close()
+            
+            # 將位元組資料作為圖片檔案回傳
+            return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
+    except Exception as e:
+        return f"截圖失敗: {e}", 500
 
 if __name__ == '__main__':
     app.run(debug=True)
