@@ -80,7 +80,11 @@ def home():
             <input type="text" id="query-input" placeholder="請輸入「登錄證號」或「Trello 卡片網址」..." />
             <button id="submit-btn" onclick="performQuery()">查詢</button>
         </div>
-        <p style="font-size: 0.9em; color: #666; margin-top: -10px;">支援格式：10位數字證號 (如 0113403577) 或 Trello 卡片連結 (如 https://trello.com/c/...)</p>
+        <p style="font-size: 0.9em; color: #666; margin-top: -10px;">
+            支援格式：10位數字證號 (如 0113403577) 或 Trello 卡片連結 (如 https://trello.com/c/...)
+            <br/>
+            範例測試：<code>0113403577</code> (審核通過) | <code>0102204809</code> (資格不符) | <code>01134035</code> (無效證號)
+        </p>
 
         <div id="loading">
             <div class="spinner"></div>
