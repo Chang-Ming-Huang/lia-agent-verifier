@@ -1,0 +1,4 @@
+| `TRELLO_API_KEY` | `你的 Trello API Key`|
+| `TRELLO_TOKEN` | `你的 Trello Token` |
+| `TRELLO_BOARD_ID` | `ID代碼` |
+| `TRIGGER_KEYWORD` | `年繳方案申請` |
