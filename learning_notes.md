@@ -19,17 +19,18 @@
 
 ### 2.1 核心模組
 *   **`app.py` (Flask)**: 處理 HTTP 請求，提供 Web 介面與 API 端點。
-*   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析。
+*   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析、Email 範本生成。
 *   **`trello_utils.py` (Trello API)**: 處理 Trello 卡片資訊讀取、截圖上傳與留言。
 
 ### 2.2 資料流
 1.  **User** -> **Web UI**: 輸入證號或 Trello 網址。
 2.  **Web UI** -> **API (`/check`)**: 發送非同步請求 (AJAX)。
-3.  **API** -> **`trello_utils`**: (若是 Trello 網址) 解析卡片取得證號。
-4.  **API** -> **`lia_bot`**: 啟動瀏覽器查詢，回傳結果 (截圖 bytes + 狀態)。
-5.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將截圖上傳回 Trello 卡片。
-6.  **API** -> **Web UI**: 回傳 JSON (Base64 圖片 + Email 範本)。
-7.  **Web UI**: 渲染結果。
+3.  **API** -> **`trello_utils`**: (若是 Trello 網址) 解析卡片取得證號、聯絡信箱。
+4.  **API** -> **`lia_bot`**: 啟動瀏覽器查詢，回傳結果 (截圖 bytes + 狀態 + Email 範本)。
+5.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將截圖上傳回 Trello 卡片，並留言結果摘要。
+6.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將包含聯絡信箱和 Email 範本的內容作為**獨立留言**回傳至 Trello 卡片。
+7.  **Web UI**: 回傳 JSON (Base64 圖片 + Email 範本)。
+8.  **Web UI**: 渲染結果。
 
 ---
 
@@ -64,7 +65,7 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 Python 套件
+# 複製 requirements.txt 並安裝 Python 套件
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -82,64 +83,98 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
 
 ---
 
-## 5. 關鍵技術實作細節
+<h2>5. 核心自動化流程整合 (LIAQueryBot API 化)</h2>
 
-### 5.1 記憶體內截圖 (In-Memory Screenshot)
-為了適應 Serverless 環境 (無持久儲存)，我們不將截圖存檔，而是直接操作二進位數據。
+<h3>5.1 <code>lia_bot.py</code> 核心邏輯</h3>
+<ul>
+    <li>將 Playwright + ddddocr 查詢壽險公會網站的核心邏輯封裝在 <code>LIAQueryBot</code> 類別中。</li>
+    <li>實作了: 瀏覽器啟動、導航、驗證碼識別與填寫、表單提交、Alert 處理、驗證碼錯誤重試、結果頁面解析 (初次登錄日期)、日期判斷 (一年內)。</li>
+    <li>將截圖功能修改為<strong>記憶體內截圖</strong> (<code>page.screenshot()</code> 不指定 <code>path</code>，只截取頁面上方 60%)，回傳原始 <code>bytes</code>，避免伺服器寫入磁碟。</li>
+    <li>新增 <code>_generate_email_template</code> 方法，根據查詢結果狀態動態生成回信 Email 的標題與內文。</li>
+    <li>截圖檔名優化:
+        <ul>
+            <li>「審核成功」改為「審核通過」</li>
+            <li>「審核失敗」改為「資格不符」</li>
+            <li>「查詢異常」改為「無效證號」</li>
+        </ul>
+    </li>
+</ul>
 
-```python
-# lia_bot.py
-# 截取 60% 高度 (優化圖片大小)
-page_height = self.page.evaluate("document.body.scrollHeight")
-screenshot_bytes = self.page.screenshot(
-    clip={"x": 0, "y": 0, "width": self.page.viewport_size['width'], "height": page_height * 0.6}
-)
-# 回傳 bytes 給 API
-```
+<h3>5.2 <code>trello_utils.py</code> 中的 Trello 整合優化</h3>
+<ul>
+    <li>新增 <code>extract_email_from_text</code> 函式，用於從 Trello 卡片描述中精確提取「聯絡信箱」。
+        <ul>
+            <li>特別處理了 Trello Markdown 中可能存在的反斜線 <code>\</code> 轉義字元，確保 Email 能被完整抓取。</li>
+        </ul>
+    </li>
+    <li>更新 <code>resolve_trello_input</code> 函式，使其除了回傳證號和卡片 ID 外，也回傳提取到的聯絡信箱。</li>
+    <li><code>upload_result_to_trello</code> 函式:
+        <ul>
+            <li>負責上傳截圖附件。</li>
+            <li>留言驗證結果摘要 (例如：「✅ 查詢完成：0113403577_審核通過_114_05_13」)。</li>
+        </ul>
+    </li>
+    <li>新增 <code>post_email_template_to_trello</code> 函式:
+        <ul>
+            <li>負責將格式化後的 Email 標題與內文 (包含聯絡信箱，若有提取到) 作為**獨立的留言**發布到 Trello 卡片。</li>
+            <li>調整排版，確保「Finfo 客服團隊 敬上」不會被誤判為標題而放大。</li>
+            <li>移除了分隔線，並在「建議回信範本：」下方多空一行，提升可讀性。</li>
+        </ul>
+    </li>
+</ul>
 
-### 5.2 前後端互動 (JSON + Base64)
-API 不直接回傳圖片檔案，而是回傳 JSON，讓前端能同時收到圖片和文字資訊。
-
-```python
-# app.py
-img_base64 = base64.b64encode(result['screenshot_bytes']).decode('utf-8')
-return jsonify({
-    "success": True,
-    "image": f"data:image/png;base64,{img_base64}",
-    "filename": filename,
-    "email": email_template
-})
-```
-
-### 5.3 驗證碼重試機制
-使用 `dialog` 事件監聽器處理「驗證碼錯誤」彈窗，並自動刷新重試。
-
-```python
-# lia_bot.py
-def handle_dialog(dialog):
-    if "驗證碼錯誤" in dialog.message:
-        should_retry = True
-    dialog.accept()
-
-self.page.once("dialog", handle_dialog)
-```
+<h3>5.3 <code>app.py</code> 中的 API 端點</h3>
+<ul>
+    <li>引入 <code>lia_bot</code> 和 <code>trello_utils</code>。</li>
+    <li>**更新 <code>/check</code> 路由**: 接收 <code>id</code> (登錄字號或 Trello 網址) 參數。
+        <ol>
+            <li>透過 <code>trello_utils.resolve_trello_input()</code> 解析輸入，如果是 Trello 網址則提取證號、卡片 ID 和**聯絡信箱**。</li>
+            <li>呼叫 <code>LIAQueryBot</code> 執行查詢。</li>
+            <li>取得 <code>LIAQueryBot</code> 回傳的結果字典，其中包含 <code>screenshot_bytes</code>、<code>suggested_filename</code> 和 <code>email_info</code>。</li>
+            <li>將 <code>screenshot_bytes</code> 轉為 Base64 字串。</li>
+            <li>若有 Trello 卡片 ID，呼叫 <code>trello_utils.upload_result_to_trello()</code> 將結果上傳，並**依序呼叫 <code>trello_utils.post_email_template_to_trello()</code> 留言 Email 範本 (含聯絡信箱)**。</li>
+            <li>最終回傳 JSON 格式的結果，包含 Base64 圖片、檔名、Email 範本和原始 Trello 連結 (若有)。</li>
+        </ol>
+    </li>
+    <li>**更新 <code>/</code> 首頁路由**: 提供包含輸入框、按鈕、Loading 動畫、結果顯示區的互動式 Web UI。
+        <ul>
+            <li>介面中提供測試範例。</li>
+            <li>若為 Trello 網址輸入，顯示「已將驗證結果回覆在票上」的提示文字及「回到 Trello 票」按鈕。</li>
+        </ul>
+    </li>
+</ul>
 
 ---
 
-## 6. Git 操作與故障排除
+<h2>6. 核心概念解析</h2>
 
-*   **Git Push Rejected (Secret Scanning)**:
-    *   若不小心 commit 了敏感資料，GitHub 會擋下 push。
-    *   **解法**: 使用 `git reset --mixed origin/master` 重置本地歷史，修改檔案 (移除 Key)，再重新 commit。
-*   **Render 佈署**:
-    *   每次 `git push` 會自動觸發。
-    *   若需除錯，查看 Render Dashboard 的 Logs。
+<h3>6.1 截圖是怎麼回傳的？ (Memory Stream)</h3>
+在 <code>app.py</code> 中：
+<pre><code class="language-python"># 1. 截圖不存檔，直接回傳二進位數據 (bytes)
+screenshot_bytes = page.screenshot()
+
+# 2. 使用 BytesIO 在記憶體中建立虛擬檔案
+# 3. 使用 send_file 將數據串流 (Stream) 回傳給瀏覽器
+return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
+</code></pre>
+<ul>
+    <li><strong>優點</strong>: 不佔用伺服器硬碟空間 (Disk I/O)，速度快，適合動態生成內容。</li>
+</ul>
+
+<h3>6.2 Docker 的優勢</h3>
+<ul>
+    <li><strong>一致性</strong>: "Build once, run anywhere"。在本機 Docker 能跑，推上雲端就能跑。</li>
+    <li><strong>完整控制</strong>: 不受雲端供應商預設環境 (如 Python 版本、系統函式庫) 的限制。</li>
+</ul>
 
 ---
 
-## 7. 常用指令
+<h2>7. 常用指令</h2>
 
-*   **啟動虛擬環境**: `.\venv\Scripts\Activate.ps1`
-*   **安裝依賴**: `pip install -r requirements.txt`
-*   **啟動 App**: `python app.py`
-*   **Git 提交**: `git add .` -> `git commit -m "..."` -> `git push`
+<ul>
+    <li><strong>啟動虛擬環境</strong>: <code>.\venv\Scripts\Activate.ps1</code></li>
+    <li><strong>安裝依賴</strong>: <code>pip install -r requirements.txt</code></li>
+    <li><strong>啟動 App</strong>: <code>python app.py</code></li>
+    <li><strong>Git 提交</strong>: <code>git add .</code> -> <code>git commit -m "..."</code> -> <code>git push</code></li>
+    <li><strong>Git 敏感資料清理 (本地歷史)</strong>: <code>git reset --mixed origin/master</code> (謹慎使用，會覆蓋本地未追蹤的 commit 歷史)</li>
+</ul>

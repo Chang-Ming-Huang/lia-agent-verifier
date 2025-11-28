@@ -81,7 +81,7 @@ def home():
             <button id="submit-btn" onclick="performQuery()">查詢</button>
         </div>
         <p style="font-size: 0.9em; color: #666; margin-top: -10px;">
-            支援格式：10位數字證號 (如 0113403577) 或 Trello 卡片連結 (如 https://trello.com/c/...)
+            支援格式：數字證號 (例如：0113403577) 或 Trello 卡片連結 (如 https://trello.com/c/...)
             <br/>
             範例測試：<code>0113403577</code> (審核通過) | <code>0102204809</code> (資格不符) | <code>01134035</code> (無效證號)
         </p>
@@ -158,6 +158,19 @@ def home():
                         <br/><br/>
                         <a href="${{imgUrl}}" download="${{filename}}" style="color: #007bff; text-decoration: none;">下載截圖</a>
                         
+                        ${{ data.trello_card_url ? 
+                            `<div style="margin-top: 20px; text-align: center; background-color: #e6f7ff; padding: 15px; border-radius: 8px; border: 1px solid #91d5ff;">
+                                <p style="font-size: 1.1em; color: #0056b3; margin-bottom: 15px;">
+                                    已將驗證結果回覆在票上，你可以繼續回到 Trello 進行回信步驟。
+                                </p>
+                                <button onclick="window.open('${{data.trello_card_url}}', '_blank')" 
+                                        style="background-color: #1890ff; color: white; padding: 10px 20px; border-radius: 5px; cursor: pointer; border: none; font-size: 1em;">
+                                    回到 Trello 票
+                                </button>
+                            </div>`
+                            : ''
+                        }}
+                        
                         <div class="email-section">
                             <h3>📧 回信範本</h3>
                             
@@ -208,11 +221,12 @@ def check_registration():
     
     trello_card_id = None
     reg_no = input_value
+    contact_email = None
 
     try:
         # 1. 解析輸入 (判斷是否為 Trello 網址)
         try:
-             reg_no, trello_card_id = trello_utils.resolve_trello_input(input_value)
+             reg_no, trello_card_id, contact_email = trello_utils.resolve_trello_input(input_value)
         except ValueError as ve:
              return jsonify({"success": False, "message": f"輸入解析錯誤: {str(ve)}"}), 400
 
@@ -247,7 +261,13 @@ def check_registration():
                         trello_utils.upload_result_to_trello(
                             trello_card_id, 
                             result['screenshot_bytes'], 
-                            filename
+                            filename,
+                            result['msg'] # 將訊息傳入，作為截圖留言的一部分
+                        )
+                        trello_utils.post_email_template_to_trello(
+                            trello_card_id,
+                            result['email_info'],
+                            contact_email
                         )
                     except Exception as te:
                         print(f"Trello 回傳失敗 (但不影響主流程): {te}")
@@ -257,7 +277,8 @@ def check_registration():
                     "success": True,
                     "image": img_data_url,
                     "filename": filename,
-                    "email": result.get("email_info", {})
+                    "email": result.get("email_info", {}),
+                    "trello_card_url": input_value if trello_card_id else None # 回傳 Trello 原始連結
                 })
             else:
                 return jsonify({"success": False, "message": f"查詢失敗或查無資料: {result['msg']}"}), 404
