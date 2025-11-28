@@ -4,6 +4,7 @@ import io
 import ddddocr
 import requests
 import base64
+import threading
 from playwright.sync_api import sync_playwright
 from urllib.parse import quote
 
@@ -16,11 +17,112 @@ app = Flask(__name__)
 # 初始化 OCR (保留供 /ocr 路由測試用)
 ocr = ddddocr.DdddOcr()
 
+# 從環境變數讀取設定
+TRIGGER_KEYWORD = os.environ.get("TRIGGER_KEYWORD", "年繳方案申請")
+
 # 輔助函式：用於遮罩敏感資訊
 def mask_sensitive_data(data):
     if data and len(data) > 6:
         return data[:3] + '***' + data[-3:]
     return '***' # 如果資料太短或不存在，直接遮罩
+
+def process_trello_card(card_id, card_url):
+    """
+    背景任務：處理 Trello 卡片的自動驗證
+    """
+    print(f"🧵 [Background] 開始處理卡片: {card_id}")
+    bot = None
+    try:
+        # 1. 從卡片解析證號和信箱
+        # 注意：因為是直接從 Webhook 觸發，我們其實已經有 card_id 了
+        # 但為了複用 trello_utils 的邏輯，我們傳入 URL 讓它解析
+        reg_no, _, contact_email = trello_utils.resolve_trello_input(card_url)
+        
+        print(f"🧵 [Background] 解析結果: 證號={reg_no}, 信箱={contact_email}")
+
+        # 2. 驗證證號格式
+        if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
+            print(f"🧵 [Background] 證號格式錯誤，跳過")
+            return
+        
+        if len(reg_no) < 10:
+            reg_no = reg_no.zfill(10)
+
+        # 3. 執行爬蟲
+        bot = LIAQueryBot(headless=True)
+        bot.start()
+        result = bot.perform_query(reg_no)
+        
+        # 4. 回傳結果到 Trello
+        if result['success'] and result.get('screenshot_bytes'):
+            filename = result.get('suggested_filename', f'{reg_no}_result.png')
+            
+            trello_utils.upload_result_to_trello(
+                card_id, 
+                result['screenshot_bytes'], 
+                filename,
+                result['msg']
+            )
+            
+            trello_utils.post_email_template_to_trello(
+                card_id,
+                result['email_info'],
+                contact_email
+            )
+            print(f"🧵 [Background] 卡片 {card_id} 處理完成並回報")
+        else:
+            print(f"🧵 [Background] 查詢失敗: {result['msg']}")
+            
+    except Exception as e:
+        print(f"🧵 [Background] 發生錯誤: {e}")
+    finally:
+        if bot:
+            bot.close()
+
+@app.route('/webhook/trello', methods=['HEAD', 'POST'])
+def trello_webhook():
+    """
+    接收 Trello Webhook
+    HEAD: Trello 建立 Webhook 時會發送 HEAD 請求來驗證網址是否存在
+    POST: 實際的事件通知
+    """
+    if request.method == 'HEAD':
+        return "OK", 200
+
+    data = request.json
+    # print(f"Webhook received: {data}") # Debug用，正式環境建議註解掉以免 Log 太多
+
+    try:
+        # 檢查事件類型
+        action = data.get('action', {})
+        action_type = action.get('type')
+        
+        # 我們只關心「建立卡片」的事件
+        # 也可以監聽 'updateCard' 若要支援改名觸發，但目前先單純一點
+        if action_type == 'createCard':
+            card = action.get('data', {}).get('card', {})
+            card_name = card.get('name', '')
+            card_id = card.get('id')
+            card_short_link = card.get('shortLink')
+            
+            # 檢查關鍵字
+            if TRIGGER_KEYWORD in card_name:
+                print(f"🔔 偵測到關鍵字「{TRIGGER_KEYWORD}」，卡片 ID: {card_id}")
+                
+                # 組出卡片網址
+                card_url = f"https://trello.com/c/{card_short_link}"
+                
+                # 啟動背景執行緒處理，以免 Webhook 超時 (Trello 要求 10秒內回傳 200)
+                thread = threading.Thread(target=process_trello_card, args=(card_id, card_url))
+                thread.start()
+            else:
+                print(f"🔕 忽略卡片：{card_name} (未包含關鍵字)")
+
+    except Exception as e:
+        print(f"Webhook 處理錯誤: {e}")
+
+    # 無論如何都回傳 200，告訴 Trello 我們收到了
+    return "OK", 200
 
 @app.route('/')
 def home():
