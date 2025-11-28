@@ -12,17 +12,19 @@
 *   **使用者介面 (UI)**: 提供友善的網頁介面，顯示查詢進度、結果截圖及 Email 回信範本。
 *   **安全性**: 妥善管理 API Key 等敏感資訊。
 *   **容器化**: 使用 Docker 進行標準化佈署。
+*   **Webhook 自動化**: 透過 Trello Webhook 實現新卡片建立時自動觸發驗證流程。
 
 ---
 
 ## 2. 架構設計
 
 ### 2.1 核心模組
-*   **`app.py` (Flask)**: 處理 HTTP 請求，提供 Web 介面與 API 端點。
+*   **`app.py` (Flask)**: 處理 HTTP 請求，提供 Web 介面與 API 端點、Webhook 接收器。
 *   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析、Email 範本生成。
 *   **`trello_utils.py` (Trello API)**: 處理 Trello 卡片資訊讀取、截圖上傳與留言。
+*   **`register_webhook.py`**: 一次性執行腳本，用於向 Trello 註冊 Webhook。
 
-### 2.2 資料流
+### 2.2 資料流 (Web UI 觸發)
 1.  **User** -> **Web UI**: 輸入證號或 Trello 網址。
 2.  **Web UI** -> **API (`/check`)**: 發送非同步請求 (AJAX)。
 3.  **API** -> **`trello_utils`**: (若是 Trello 網址) 解析卡片取得證號、聯絡信箱。
@@ -31,6 +33,16 @@
 6.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將包含聯絡信箱和 Email 範本的內容作為**獨立留言**回傳至 Trello 卡片。
 7.  **Web UI**: 回傳 JSON (Base64 圖片 + Email 範本)。
 8.  **Web UI**: 渲染結果。
+
+### 2.3 資料流 (Webhook 自動觸發)
+1.  **Trello User** -> **Trello Board**: 建立新卡片 (標題包含觸發關鍵字)。
+2.  **Trello** -> **Webhook (`/webhook/trello`)**: Trello 自動發送 POST 請求到 Render 服務。
+3.  **Render (`app.py`)**: 接收 Webhook 請求，立即回傳 `200 OK`，並在**背景執行緒**中啟動 `process_trello_card`。
+4.  **`process_trello_card` (背景任務)**:
+    *   從 Webhook 數據中獲取 `card_id` 和 `card_url`。
+    *   呼叫 `trello_utils` 解析卡片描述，取得證號、聯絡信箱。
+    *   呼叫 `lia_bot` 執行查詢。
+    *   呼叫 `trello_utils` 上傳截圖、留言結果摘要和 Email 範本到 Trello 卡片。
 
 ---
 
@@ -44,6 +56,8 @@
 # .env 範例
 TRELLO_API_KEY=your_key
 TRELLO_TOKEN=your_token
+TRELLO_BOARD_ID=your_board_id
+TRIGGER_KEYWORD=年繳方案申請
 ```
 
 ### 3.2 雲端佈署 (Render)
@@ -83,7 +97,7 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
 
 ---
 
-<h2>5. 核心自動化流程整合 (LIAQueryBot API 化)</h2>
+<h2>5. 關鍵技術實作細節</h2>
 
 <h3>5.1 <code>lia_bot.py</code> 核心邏輯</h3>
 <ul>
@@ -136,6 +150,14 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
             <li>最終回傳 JSON 格式的結果，包含 Base64 圖片、檔名、Email 範本和原始 Trello 連結 (若有)。</li>
         </ol>
     </li>
+    <li>**新增 <code>/webhook/trello</code> 路由**:
+        <ul>
+            <li>接收 Trello 的 Webhook 請求。</li>
+            <li>處理 Trello 註冊 Webhook 時發送的 <code>HEAD</code> 請求。</li>
+            <li>過濾事件類型 (僅處理 <code>createCard</code>) 和卡片標題關鍵字 (<code>TRIGGER_KEYWORD</code>)。</li>
+            <li>符合條件時，將實際的驗證邏輯放入**背景執行緒** (<code>threading</code>) 處理，並立即回傳 `200 OK` 給 Trello，避免 Webhook 超時。</li>
+        </ul>
+    </li>
     <li>**更新 <code>/</code> 首頁路由**: 提供包含輸入框、按鈕、Loading 動畫、結果顯示區的互動式 Web UI。
         <ul>
             <li>介面中提供測試範例。</li>
@@ -144,11 +166,26 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     </li>
 </ul>
 
+<h3>5.4 <code>register_webhook.py</code></h3>
+<ul>
+    <li>一次性執行腳本，用於向 Trello API 註冊 Webhook。</li>
+    <li>監聽指定的 <code>TRELLO_BOARD_ID</code>。</li>
+    <li>指定 Render 服務的 <code>/webhook/trello</code> 路由作為回呼網址 (<code>callbackURL</code>)。</li>
+</ul>
+
 ---
 
 <h2>6. 核心概念解析</h2>
 
-<h3>6.1 截圖是怎麼回傳的？ (Memory Stream)</h3>
+<h3>6.1 Webhook 機制 (Trello 自動化)</h3>
+<ul>
+    <li>**概念**: Trello 在事件發生時主動「推播」通知到指定 URL，而非程式週期性「輪詢」。</li>
+    <li>**優點**: 即時性高、資源消耗低。</li>
+    <li>**挑戰**: Trello 要求 Webhook 接收端在 10 秒內回覆 `200 OK`。</li>
+    <li>**解決方案**: 在 Flask 接收到 Webhook 後，立即啟動一個**背景執行緒 (<code>threading</code>)** 來處理耗時的爬蟲任務，主執行緒則立即回覆 `200 OK`。</li>
+</ul>
+
+<h3>6.2 截圖是怎麼回傳的？ (Memory Stream)</h3>
 在 <code>app.py</code> 中：
 <pre><code class="language-python"># 1. 截圖不存檔，直接回傳二進位數據 (bytes)
 screenshot_bytes = page.screenshot()
@@ -161,7 +198,7 @@ return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
     <li><strong>優點</strong>: 不佔用伺服器硬碟空間 (Disk I/O)，速度快，適合動態生成內容。</li>
 </ul>
 
-<h3>6.2 Docker 的優勢</h3>
+<h3>6.3 Docker 的優勢</h3>
 <ul>
     <li><strong>一致性</strong>: "Build once, run anywhere"。在本機 Docker 能跑，推上雲端就能跑。</li>
     <li><strong>完整控制</strong>: 不受雲端供應商預設環境 (如 Python 版本、系統函式庫) 的限制。</li>
@@ -174,7 +211,8 @@ return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
 <ul>
     <li><strong>啟動虛擬環境</strong>: <code>.\venv\Scripts\Activate.ps1</code></li>
     <li><strong>安裝依賴</strong>: <code>pip install -r requirements.txt</code></li>
-    <li><strong>啟動 App</strong>: <code>python app.py</code></li>
+    <li><strong>啟動 App (本地)</strong>: <code>python app.py</code></li>
+    <li><strong>註冊 Trello Webhook (一次性)</strong>: <code>python register_webhook.py</code> (需 Render 服務已上線)</li>
     <li><strong>Git 提交</strong>: <code>git add .</code> -> <code>git commit -m "..."</code> -> <code>git push</code></li>
     <li><strong>Git 敏感資料清理 (本地歷史)</strong>: <code>git reset --mixed origin/master</code> (謹慎使用，會覆蓋本地未追蹤的 commit 歷史)</li>
 </ul>
