@@ -255,6 +255,10 @@ Finfo 客服團隊 敬上"""
                 self._refresh_captcha()
                 dialog_message = None
                 continue
+
+            if dialog_message and "查無資料" in dialog_message:
+                final_result.update({"success": True, "status": "not_found", "msg": "查無此登錄字號資料"})
+                break
             
             # 檢查頁面內容
             page_content = self.page.content()
