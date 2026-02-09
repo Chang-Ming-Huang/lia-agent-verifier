@@ -11,11 +11,12 @@
     *   自動解析「初次登錄日期」。
     *   判斷是否在「一年內」登錄，以此區分「審核通過」或「資格不符」。
 *   **Web 使用者介面**: 提供簡易的網頁介面，輸入證號或 Trello 卡片網址即可查詢，並即時預覽截圖與 Email 範本。
-*   **Trello 深度整合**:
+*   **Trello 深度整合** (`trello_flow/`):
     *   支援輸入 Trello 卡片網址自動解析證號與聯絡信箱。
     *   查詢結果截圖自動上傳至 Trello 卡片附件。
     *   Email 回信範本（標題與內文）自動留言至 Trello 卡片。
     *   **Webhook 自動化**: 監聽 Trello 看板的新卡片事件，當標題包含特定關鍵字（如「年繳方案申請」）時，自動觸發查詢流程。
+*   **REST API 驗證** (`api_flow/`): 提供 `POST /api/verify-agent-license` 端點，接收證號並回傳 JSON 格式的驗證結果。
 *   **容器化部署**: 提供 `Dockerfile`，支援 Render 等雲端平台部署。
 
 ## 技術棧
@@ -98,14 +99,27 @@ python app.py
 
 ```
 render-test/
-├── app.py                  # Flask 主程式，定義路由與 API
-├── lia_bot.py              # 核心邏輯：Playwright 爬蟲與 ddddocr 驗證
-├── trello_utils.py         # 模組：處理 Trello API 相關操作 (讀取、上傳、留言)
-├── register_webhook.py     # 工具腳本：向 Trello 註冊 Webhook 用
-├── learning_notes.md       # 開發筆記 (包含詳細架構說明)
-├── requirements.txt        # Python依賴清單
-├── Dockerfile              # Docker 建置設定
-└── README.md               # 專案說明文件
+├── app.py                          # Flask 主程式 (Web UI + /check 路由，組裝 Blueprints)
+├── lia_bot.py                      # 核心模組：Playwright 爬蟲與 ddddocr 驗證 (共用)
+│
+├── trello_flow/                    # Trello Webhook 自動化流程 (舊流程，未來可整個刪除)
+│   ├── __init__.py
+│   ├── routes.py                   # /webhook/trello 路由 + process_trello_card()
+│   ├── trello_utils.py             # Trello API 工具函式 (讀取卡片、上傳、留言)
+│   ├── register_webhook.py         # 一次性腳本：向 Trello 註冊 Webhook
+│   └── trello_intro.md             # Trello 整合功能介紹
+│
+├── api_flow/                       # REST API 驗證流程 (新流程)
+│   ├── __init__.py
+│   ├── routes.py                   # /api/verify-agent-license 路由
+│   └── TESTING.md                  # API 測試指南
+│
+├── docs/
+│   └── learning_notes.md           # 開發筆記 (架構設計與技術細節)
+│
+├── requirements.txt                # Python 依賴清單
+├── Dockerfile                      # Docker 建置設定
+└── README.md                       # 專案說明文件
 ```
 
 ## Webhook 設定 (進階)
@@ -114,7 +128,7 @@ render-test/
 
 ```bash
 # 確保 Web Service 已在線上，並修改 register_webhook.py 中的 callbackURL
-python register_webhook.py
+python trello_flow/register_webhook.py
 ```
 
 ## 備註

@@ -2,8 +2,9 @@
 Test script for POST /api/verify-agent-license endpoint.
 
 Usage:
-    python test_verify_api.py          # Test Render deployment
-    python test_verify_api.py --local  # Test localhost:5000
+    python test_verify_api.py              # Test Render deployment
+    python test_verify_api.py --local      # Test localhost:5000
+    python test_verify_api.py --production # Test Finfo production
 """
 
 import sys
@@ -11,6 +12,7 @@ import json
 import requests
 
 RENDER_URL = "https://render-test-docker-4xjz.onrender.com/api/verify-agent-license"
+FINFO_PRODUCTION_URL = "https://finfo.tw/api/verify-agent-license"
 LOCAL_URL = "http://localhost:5000/api/verify-agent-license"
 TIMEOUT = 180  # 3 minutes for Render cold start
 
@@ -74,9 +76,12 @@ def run_test(name, url, payload, send_json, expected_http, expected_status_code)
 
 
 def main():
-    use_local = "--local" in sys.argv
-    url = LOCAL_URL if use_local else RENDER_URL
-    env = "localhost" if use_local else "Render"
+    if "--local" in sys.argv:
+        url, env = LOCAL_URL, "localhost"
+    elif "--production" in sys.argv:
+        url, env = FINFO_PRODUCTION_URL, "Finfo Production"
+    else:
+        url, env = RENDER_URL, "Render"
 
     print(f"Testing POST /api/verify-agent-license")
     print(f"Target: {url} ({env})")

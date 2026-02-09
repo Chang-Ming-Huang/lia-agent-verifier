@@ -4,21 +4,22 @@ import io
 import ddddocr
 import requests
 import base64
-import threading
 from playwright.sync_api import sync_playwright
-from urllib.parse import quote
 
 # 引入自訂模組
 from lia_bot import LIAQueryBot
-import trello_utils
+from trello_flow import trello_utils
+from trello_flow import trello_bp
+from api_flow import api_bp
 
 app = Flask(__name__)
 
+# 註冊 Blueprints
+app.register_blueprint(trello_bp)
+app.register_blueprint(api_bp)
+
 # 初始化 OCR (保留供 /ocr 路由測試用)
 ocr = ddddocr.DdddOcr()
-
-# 從環境變數讀取設定
-TRIGGER_KEYWORD = os.environ.get("TRIGGER_KEYWORD", "年繳方案申請")
 
 # 輔助函式：用於遮罩敏感資訊
 def mask_sensitive_data(data):
@@ -26,144 +27,11 @@ def mask_sensitive_data(data):
         return data[:3] + '***' + data[-3:]
     return '***' # 如果資料太短或不存在，直接遮罩
 
-def process_trello_card(card_id, card_url):
-    """
-    背景任務：處理 Trello 卡片的自動驗證
-    """
-    print(f"[Background] 開始處理卡片: {card_id}")
-    bot = None
-    try:
-        # 1. 從卡片解析證號和信箱
-        try:
-            reg_no, _, contact_email = trello_utils.resolve_trello_input(card_url)
-        except ValueError as ve:
-            trello_utils._post_trello_comment(
-                card_id,
-                f"自動驗證失敗：{str(ve)}\n請確認卡片描述中的登錄證字號格式是否正確（應為 8-10 位數字）。"
-            )
-            print(f"[Background] 解析錯誤已回報 Trello: {ve}")
-            return
-
-        print(f"[Background] 解析結果: 證號={reg_no}, 信箱={contact_email}")
-
-        # 2. 驗證證號格式
-        if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
-            trello_utils._post_trello_comment(
-                card_id,
-                f"自動驗證失敗：登錄證字號格式無效「{reg_no}」\n證號應為 8-10 位純數字，請確認後重新建立卡片。"
-            )
-            # 同時發布 email 範本，讓客服可以直接複製回信
-            email_info = {
-                "subject": "Finfo 有收到您的年繳方案申請，想詢問您的登錄證字號",
-                "body": (
-                    "您好,\n\n"
-                    "這裡是 Finfo 客服團隊的審核專員，感謝您申請年繳方案。\n"
-                    "根據您提供的登錄證字號，於 壽險公會 無法查詢到資格，\n"
-                    "請再次確認提供的資料是否正確，再次感謝您的申請與支持。\n\n"
-                    "如有任何問題，隨時回覆此信與我們聯繫。\n\n"
-                    "如果有其他任何網站上的操作問題，也都歡迎您在此封信件中一併提出，我們會盡快協助，感謝您！\n\n"
-                    "Finfo 客服團隊 敬上"
-                )
-            }
-            trello_utils.post_email_template_to_trello(card_id, email_info, contact_email)
-            print(f"[Background] 證號格式錯誤已回報 Trello，跳過")
-            return
-
-        if len(reg_no) < 10:
-            reg_no = reg_no.zfill(10)
-
-        # 3. 執行爬蟲
-        bot = LIAQueryBot(headless=True)
-        bot.start()
-        result = bot.perform_query(reg_no)
-
-        # 4. 回傳結果到 Trello
-        if result['success'] and result.get('screenshot_bytes'):
-            filename = result.get('suggested_filename', f'{reg_no}_result.png')
-
-            trello_utils.upload_result_to_trello(
-                card_id,
-                result['screenshot_bytes'],
-                filename,
-                result['msg']
-            )
-
-            trello_utils.post_email_template_to_trello(
-                card_id,
-                result['email_info'],
-                contact_email
-            )
-            print(f"[Background] 卡片 {card_id} 處理完成並回報")
-        else:
-            trello_utils._post_trello_comment(
-                card_id,
-                f"自動驗證失敗：{result['msg']}\n請稍後重試或手動查詢。"
-            )
-            print(f"[Background] 查詢失敗已回報 Trello: {result['msg']}")
-
-    except Exception as e:
-        try:
-            trello_utils._post_trello_comment(
-                card_id,
-                f"自動驗證發生系統錯誤，請通知管理員或手動查詢。"
-            )
-        except:
-            pass
-        print(f"[Background] 發生錯誤: {e}")
-    finally:
-        if bot:
-            bot.close()
-
-@app.route('/webhook/trello', methods=['HEAD', 'POST'])
-def trello_webhook():
-    """
-    接收 Trello Webhook
-    HEAD: Trello 建立 Webhook 時會發送 HEAD 請求來驗證網址是否存在
-    POST: 實際的事件通知
-    """
-    if request.method == 'HEAD':
-        return "OK", 200
-
-    data = request.json
-    # print(f"Webhook received: {data}") # Debug用，正式環境建議註解掉以免 Log 太多
-
-    try:
-        # 檢查事件類型
-        action = data.get('action', {})
-        action_type = action.get('type')
-        
-        # 我們只關心「建立卡片」的事件
-        # 也可以監聽 'updateCard' 若要支援改名觸發，但目前先單純一點
-        if action_type == 'createCard':
-            card = action.get('data', {}).get('card', {})
-            card_name = card.get('name', '')
-            card_id = card.get('id')
-            card_short_link = card.get('shortLink')
-            
-            # 檢查關鍵字
-            if TRIGGER_KEYWORD in card_name:
-                print(f"偵測到關鍵字「{TRIGGER_KEYWORD}」，卡片 ID: {card_id}")
-                
-                # 組出卡片網址
-                card_url = f"https://trello.com/c/{card_short_link}"
-                
-                # 啟動背景執行緒處理，以免 Webhook 超時 (Trello 要求 10秒內回傳 200)
-                thread = threading.Thread(target=process_trello_card, args=(card_id, card_url))
-                thread.start()
-            else:
-                print(f"忽略卡片：{card_name} (未包含關鍵字)")
-
-    except Exception as e:
-        print(f"Webhook 處理錯誤: {e}")
-
-    # 無論如何都回傳 200，告訴 Trello 我們收到了
-    return "OK", 200
-
 @app.route('/')
 def home():
     # 讀取環境變數僅用於顯示資訊
     user_name = os.environ.get('MY_NAME', 'Guest')
-    
+
     return f"""
 <!DOCTYPE html>
 <html>
@@ -175,27 +43,27 @@ def home():
         body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; color: #333; }}
         .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
         h1 {{ color: #2c3e50; text-align: center; margin-bottom: 30px; }}
-        
+
         .input-group {{ display: flex; gap: 10px; margin-bottom: 20px; }}
         input[type="text"] {{ flex: 1; padding: 12px; border: 2px solid #e9ecef; border-radius: 5px; font-size: 16px; transition: border-color 0.3s; }}
         input[type="text"]:focus {{ border-color: #007bff; outline: none; }}
-        
+
         button {{ padding: 12px 25px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; transition: background-color 0.3s; }}
         button:hover {{ background-color: #0056b3; }}
         button:disabled {{ background-color: #6c757d; cursor: not-allowed; }}
-        
+
         #result-area {{ margin-top: 30px; text-align: center; min-height: 200px; display: none; }}
         #loading {{ display: none; text-align: center; margin: 20px 0; }}
         .spinner {{ width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }}
         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-        
+
         .status-box {{ padding: 15px; margin-bottom: 20px; border-radius: 5px; text-align: left; }}
         .status-info {{ background-color: #e2e3e5; color: #383d41; }}
         .status-success {{ background-color: #d4edda; color: #155724; border-left: 5px solid #28a745; }}
         .status-error {{ background-color: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }}
-        
+
         .result-img {{ max-width: 100%; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 15px; }}
-        
+
         /* Email 範本區塊樣式 */
         .email-section {{ margin-top: 30px; text-align: left; border-top: 2px dashed #eee; padding-top: 20px; }}
         .email-box {{ background-color: #f1f3f5; padding: 15px; border-radius: 5px; margin-bottom: 15px; position: relative; }}
@@ -203,7 +71,7 @@ def home():
         .email-content {{ white-space: pre-wrap; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.95em; background: white; padding: 10px; border: 1px solid #ddd; border-radius: 3px; }}
         .copy-btn {{ position: absolute; top: 10px; right: 10px; padding: 5px 10px; font-size: 12px; background-color: #6c757d; }}
         .copy-btn:hover {{ background-color: #5a6268; }}
-        
+
         .info-section {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 0.9em; color: #666; }}
         .variable {{ margin-bottom: 5px; }}
         .key {{ font-weight: bold; color: #555; }}
@@ -212,7 +80,7 @@ def home():
 <body>
     <div class="container">
         <h1>業務員登錄查詢自動化</h1>
-        
+
         <div class="input-group">
             <input type="text" id="query-input" placeholder="請輸入「登錄證號」或「Trello 卡片網址」..." />
             <button id="submit-btn" onclick="performQuery()">查詢</button>
@@ -254,7 +122,7 @@ def home():
             const btn = document.getElementById('submit-btn');
             const loading = document.getElementById('loading');
             const resultArea = document.getElementById('result-area');
-            
+
             // 重置介面
             resultArea.style.display = 'none';
             resultArea.innerHTML = '';
@@ -265,7 +133,7 @@ def home():
                 // 呼叫後端 API
                 const response = await fetch(`/check?id=${{encodeURIComponent(input)}}`);
                 const data = await response.json(); // 改為解析 JSON
-                
+
                 loading.style.display = 'none';
                 resultArea.style.display = 'block';
                 btn.disabled = false;
@@ -294,29 +162,29 @@ def home():
                         <img src="${{imgUrl}}" class="result-img" alt="查詢結果截圖" />
                         <br/><br/>
                         <a href="${{imgUrl}}" download="${{filename}}" style="color: #007bff; text-decoration: none;">下載截圖</a>
-                        
-                        ${{ data.trello_card_url ? 
+
+                        ${{ data.trello_card_url ?
                             `<div style="margin-top: 20px; text-align: center; background-color: #e6f7ff; padding: 15px; border-radius: 8px; border: 1px solid #91d5ff;">
                                 <p style="font-size: 1.1em; color: #0056b3; margin-bottom: 15px;">
                                     已將驗證結果回覆在票上，你可以繼續回到 Trello 進行回信步驟。
                                 </p>
-                                <button onclick="window.open('${{data.trello_card_url}}', '_blank')" 
+                                <button onclick="window.open('${{data.trello_card_url}}', '_blank')"
                                         style="background-color: #1890ff; color: white; padding: 10px 20px; border-radius: 5px; cursor: pointer; border: none; font-size: 1em;">
                                     回到 Trello 票
                                 </button>
                             </div>`
                             : ''
                         }}
-                        
+
                         <div class="email-section">
                             <h3>回信範本</h3>
-                            
+
                             <div class="email-box">
                                 <span class="email-label">信件標題：</span>
                                 <div id="email-subject" class="email-content">${{email.subject}}</div>
                                 <button class="copy-btn" onclick="copyToClipboard('email-subject')">複製</button>
                             </div>
-                            
+
                             <div class="email-box">
                                 <span class="email-label">信件內文：</span>
                                 <div id="email-body" class="email-content">${{email.body}}</div>
@@ -355,7 +223,7 @@ def check_registration():
     input_value = request.args.get('id')
     if not input_value:
         return jsonify({"success": False, "message": "請提供 id 參數"}), 400
-    
+
     trello_card_id = None
     reg_no = input_value
     contact_email = None
@@ -370,7 +238,7 @@ def check_registration():
         # 2. 驗證證號格式
         if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
             return jsonify({"success": False, "message": f"無效的登錄字號格式: {reg_no}"}), 400
-        
+
         # 自動補零
         if len(reg_no) < 10:
             reg_no = reg_no.zfill(10)
@@ -380,24 +248,24 @@ def check_registration():
         try:
             bot = LIAQueryBot(headless=True)
             bot.start()
-            
+
             result = bot.perform_query(reg_no)
-            
+
             if result['success'] and result.get('screenshot_bytes'):
                 # 查詢成功
                 filename = result.get('suggested_filename', f'{reg_no}_result.png')
-                
+
                 # 將 bytes 轉為 base64 字串回傳
                 img_base64 = base64.b64encode(result['screenshot_bytes']).decode('utf-8')
                 img_data_url = f"data:image/png;base64,{img_base64}"
-                
+
                 # 4. 如果有 Trello 卡片 ID，回傳結果到 Trello
                 if trello_card_id:
                     try:
                         print(f"正在回傳結果到 Trello 卡片 {trello_card_id}...")
                         trello_utils.upload_result_to_trello(
-                            trello_card_id, 
-                            result['screenshot_bytes'], 
+                            trello_card_id,
+                            result['screenshot_bytes'],
                             filename,
                             result['msg'] # 將訊息傳入，作為截圖留言的一部分
                         )
@@ -419,49 +287,13 @@ def check_registration():
                 })
             else:
                 return jsonify({"success": False, "message": f"查詢失敗或查無資料: {result['msg']}"}), 404
-                
+
         finally:
             if bot:
                 bot.close()
 
     except Exception as e:
         return jsonify({"success": False, "message": f"系統發生錯誤: {e}"}), 500
-
-@app.route('/api/verify-agent-license', methods=['POST'])
-def verify_agent_license():
-    data = request.get_json(silent=True)
-    if data is None:
-        return jsonify({"status_code": 2, "message": "Failed: Invalid ID alphanumeric format."}), 400
-
-    license_number = data.get('license_number')
-    if not license_number:
-        return jsonify({"status_code": 2, "message": "Failed: Invalid ID alphanumeric format."})
-
-    if not license_number.isdigit() or len(license_number) < 8 or len(license_number) > 10:
-        return jsonify({"status_code": 2, "message": "Failed: Invalid ID alphanumeric format."})
-
-    reg_no = license_number.zfill(10)
-
-    bot = None
-    try:
-        bot = LIAQueryBot(headless=True)
-        bot.start()
-        result = bot.perform_query(reg_no)
-
-        status = result.get('status')
-        if status == 'found_valid':
-            return jsonify({"status_code": 0, "message": "Verification passed: New agent identified."})
-        elif status == 'found_invalid':
-            return jsonify({"status_code": 1, "message": "Failed: Not a new agent (seniority > 1 year)."})
-        elif status == 'not_found':
-            return jsonify({"status_code": 3, "message": "Failed: License number not found in database."})
-        else:
-            return jsonify({"status_code": 999, "message": "Error: Third-party service is under maintenance."})
-    except Exception:
-        return jsonify({"status_code": 999, "message": "Error: Third-party service is under maintenance."})
-    finally:
-        if bot:
-            bot.close()
 
 @app.route('/ocr')
 def test_ocr_route():

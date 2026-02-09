@@ -19,30 +19,37 @@
 ## 2. 架構設計
 
 ### 2.1 核心模組
-*   **`app.py` (Flask)**: 處理 HTTP 請求，提供 Web 介面與 API 端點、Webhook 接收器。
-*   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析、Email 範本生成。
-*   **`trello_utils.py` (Trello API)**: 處理 Trello 卡片資訊讀取、截圖上傳與留言。
-*   **`register_webhook.py`**: 一次性執行腳本，用於向 Trello 註冊 Webhook。
+*   **`app.py` (Flask)**: 主程式，組裝 Blueprints，提供 Web UI (`/`, `/check`) 及測試路由 (`/ocr`, `/screenshot`)。
+*   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析、Email 範本生成。各流程共用此模組。
+*   **`trello_flow/` (Blueprint)**: Trello Webhook 自動化流程。
+    *   `routes.py`: `/webhook/trello` 路由 + `process_trello_card()` 背景任務。
+    *   `trello_utils.py`: Trello API 工具函式 (讀取卡片、上傳截圖、留言)。
+    *   `register_webhook.py`: 一次性腳本，向 Trello 註冊 Webhook。
+*   **`api_flow/` (Blueprint)**: REST API 驗證流程。
+    *   `routes.py`: `POST /api/verify-agent-license` 路由。
 
 ### 2.2 資料流 (Web UI 觸發)
 1.  **User** -> **Web UI**: 輸入證號或 Trello 網址。
-2.  **Web UI** -> **API (`/check`)**: 發送非同步請求 (AJAX)。
-3.  **API** -> **`trello_utils`**: (若是 Trello 網址) 解析卡片取得證號、聯絡信箱。
-4.  **API** -> **`lia_bot`**: 啟動瀏覽器查詢，回傳結果 (截圖 bytes + 狀態 + Email 範本)。
-5.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將截圖上傳回 Trello 卡片，並留言結果摘要。
-6.  **API** -> **`trello_utils`**: (若是 Trello 網址) 將包含聯絡信箱和 Email 範本的內容作為**獨立留言**回傳至 Trello 卡片。
-7.  **Web UI**: 回傳 JSON (Base64 圖片 + Email 範本)。
-8.  **Web UI**: 渲染結果。
+2.  **Web UI** -> **`app.py` `/check` 路由**: 發送非同步請求 (AJAX)。
+3.  **`app.py`** -> **`trello_flow/trello_utils`**: (若是 Trello 網址) 解析卡片取得證號、聯絡信箱。
+4.  **`app.py`** -> **`lia_bot`**: 啟動瀏覽器查詢，回傳結果 (截圖 bytes + 狀態 + Email 範本)。
+5.  **`app.py`** -> **`trello_flow/trello_utils`**: (若是 Trello 網址) 將截圖上傳回 Trello 卡片，並留言結果摘要與 Email 範本。
+6.  **Web UI**: 回傳 JSON (Base64 圖片 + Email 範本)，渲染結果。
 
-### 2.3 資料流 (Webhook 自動觸發)
+### 2.3 資料流 (Webhook 自動觸發) — `trello_flow/routes.py`
 1.  **Trello User** -> **Trello Board**: 建立新卡片 (標題包含觸發關鍵字)。
-2.  **Trello** -> **Webhook (`/webhook/trello`)**: Trello 自動發送 POST 請求到 Render 服務。
-3.  **Render (`app.py`)**: 接收 Webhook 請求，立即回傳 `200 OK`，並在**背景執行緒**中啟動 `process_trello_card`。
+2.  **Trello** -> **`trello_flow/routes.py` `/webhook/trello`**: Trello 自動發送 POST 請求到 Render 服務。
+3.  **`trello_flow/routes.py`**: 接收 Webhook 請求，立即回傳 `200 OK`，並在**背景執行緒**中啟動 `process_trello_card`。
 4.  **`process_trello_card` (背景任務)**:
     *   從 Webhook 數據中獲取 `card_id` 和 `card_url`。
-    *   呼叫 `trello_utils` 解析卡片描述，取得證號、聯絡信箱。
+    *   呼叫 `trello_flow/trello_utils` 解析卡片描述，取得證號、聯絡信箱。
     *   呼叫 `lia_bot` 執行查詢。
-    *   呼叫 `trello_utils` 上傳截圖、留言結果摘要和 Email 範本到 Trello 卡片。
+    *   呼叫 `trello_flow/trello_utils` 上傳截圖、留言結果摘要和 Email 範本到 Trello 卡片。
+
+### 2.4 資料流 (REST API 驗證) — `api_flow/routes.py`
+1.  **外部系統** -> **`POST /api/verify-agent-license`**: 發送 JSON `{"license_number": "..."}`.
+2.  **`api_flow/routes.py`** -> **`lia_bot`**: 啟動瀏覽器查詢。
+3.  回傳 JSON 格式驗證結果 (`status_code`: 0=通過, 1=資格不符, 2=格式無效, 3=查無資料, 999=服務維護中)。
 
 ---
 
@@ -114,7 +121,7 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     </li>
 </ul>
 
-<h3>5.2 <code>trello_utils.py</code> 中的 Trello 整合優化</h3>
+<h3>5.2 <code>trello_flow/trello_utils.py</code> 中的 Trello 整合優化</h3>
 <ul>
     <li>新增 <code>extract_email_from_text</code> 函式，用於從 Trello 卡片描述中精確提取「聯絡信箱」。
         <ul>
@@ -137,28 +144,20 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     </li>
 </ul>
 
-<h3>5.3 <code>app.py</code> 中的 API 端點</h3>
+<h3>5.3 <code>app.py</code> 主程式 (Blueprint 架構)</h3>
 <ul>
-    <li>引入 <code>lia_bot</code> 和 <code>trello_utils</code>。</li>
-    <li>**更新 <code>/check</code> 路由**: 接收 <code>id</code> (登錄字號或 Trello 網址) 參數。
+    <li>引入 <code>lia_bot</code>、<code>trello_flow.trello_utils</code>，並註冊兩個 Blueprint：<code>trello_bp</code> (Trello 流程) 和 <code>api_bp</code> (API 流程)。</li>
+    <li>**<code>/check</code> 路由** (保留在 app.py): 接收 <code>id</code> (登錄字號或 Trello 網址) 參數。
         <ol>
-            <li>透過 <code>trello_utils.resolve_trello_input()</code> 解析輸入，如果是 Trello 網址則提取證號、卡片 ID 和**聯絡信箱**。</li>
+            <li>透過 <code>trello_flow.trello_utils.resolve_trello_input()</code> 解析輸入。</li>
             <li>呼叫 <code>LIAQueryBot</code> 執行查詢。</li>
-            <li>取得 <code>LIAQueryBot</code> 回傳的結果字典，其中包含 <code>screenshot_bytes</code>、<code>suggested_filename</code> 和 <code>email_info</code>。</li>
-            <li>將 <code>screenshot_bytes</code> 轉為 Base64 字串。</li>
-            <li>若有 Trello 卡片 ID，呼叫 <code>trello_utils.upload_result_to_trello()</code> 將結果上傳，並**依序呼叫 <code>trello_utils.post_email_template_to_trello()</code> 留言 Email 範本 (含聯絡信箱)**。</li>
-            <li>最終回傳 JSON 格式的結果，包含 Base64 圖片、檔名、Email 範本和原始 Trello 連結 (若有)。</li>
+            <li>若有 Trello 卡片 ID，呼叫 <code>trello_flow.trello_utils</code> 上傳結果與 Email 範本。</li>
+            <li>回傳 JSON (Base64 圖片 + Email 範本)。</li>
         </ol>
     </li>
-    <li>**新增 <code>/webhook/trello</code> 路由**:
-        <ul>
-            <li>接收 Trello 的 Webhook 請求。</li>
-            <li>處理 Trello 註冊 Webhook 時發送的 <code>HEAD</code> 請求。</li>
-            <li>過濾事件類型 (僅處理 <code>createCard</code>) 和卡片標題關鍵字 (<code>TRIGGER_KEYWORD</code>)。</li>
-            <li>符合條件時，將實際的驗證邏輯放入**背景執行緒** (<code>threading</code>) 處理，並立即回傳 `200 OK` 給 Trello，避免 Webhook 超時。</li>
-        </ul>
-    </li>
-    <li>**更新 <code>/</code> 首頁路由**: 提供包含輸入框、按鈕、Loading 動畫、結果顯示區的互動式 Web UI。
+    <li>**<code>/webhook/trello</code> 路由** (已移至 <code>trello_flow/routes.py</code>): 透過 Blueprint 註冊。</li>
+    <li>**<code>/api/verify-agent-license</code> 路由** (已移至 <code>api_flow/routes.py</code>): 透過 Blueprint 註冊。</li>
+    <li>**<code>/</code> 首頁路由** (保留在 app.py): 提供包含輸入框、按鈕、Loading 動畫、結果顯示區的互動式 Web UI。
         <ul>
             <li>介面中提供測試範例。</li>
             <li>若為 Trello 網址輸入，顯示「已將驗證結果回覆在票上」的提示文字及「回到 Trello 票」按鈕。</li>
@@ -166,11 +165,12 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     </li>
 </ul>
 
-<h3>5.4 <code>register_webhook.py</code></h3>
+<h3>5.4 <code>trello_flow/register_webhook.py</code></h3>
 <ul>
     <li>一次性執行腳本，用於向 Trello API 註冊 Webhook。</li>
     <li>監聽指定的 <code>TRELLO_BOARD_ID</code>。</li>
     <li>指定 Render 服務的 <code>/webhook/trello</code> 路由作為回呼網址 (<code>callbackURL</code>)。</li>
+    <li>執行方式: <code>python trello_flow/register_webhook.py</code></li>
 </ul>
 
 ---
@@ -212,7 +212,7 @@ return send_file(io.BytesIO(screenshot_bytes), mimetype='image/png')
     <li><strong>啟動虛擬環境</strong>: <code>.\venv\Scripts\Activate.ps1</code></li>
     <li><strong>安裝依賴</strong>: <code>pip install -r requirements.txt</code></li>
     <li><strong>啟動 App (本地)</strong>: <code>python app.py</code></li>
-    <li><strong>註冊 Trello Webhook (一次性)</strong>: <code>python register_webhook.py</code> (需 Render 服務已上線)</li>
+    <li><strong>註冊 Trello Webhook (一次性)</strong>: <code>python trello_flow/register_webhook.py</code> (需 Render 服務已上線)</li>
     <li><strong>Git 提交</strong>: <code>git add .</code> -> <code>git commit -m "..."</code> -> <code>git push</code></li>
     <li><strong>Git 敏感資料清理 (本地歷史)</strong>: <code>git reset --mixed origin/master</code> (謹慎使用，會覆蓋本地未追蹤的 commit 歷史)</li>
 </ul>
