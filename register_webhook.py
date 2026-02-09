@@ -14,7 +14,7 @@ CALLBACK_URL = "https://render-test-docker-4xjz.onrender.com/webhook/trello"
 
 def register_webhook():
     if not API_KEY or not TOKEN or not BOARD_ID:
-        print("❌ 錯誤：請確認 .env 中已設定 TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_BOARD_ID")
+        print("錯誤：請確認 .env 中已設定 TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_BOARD_ID")
         return
 
     url = f"https://api.trello.com/1/webhooks/"
@@ -32,10 +32,10 @@ def register_webhook():
     response = requests.post(url, params=params)
     
     if response.status_code == 200:
-        print("✅ Webhook 註冊成功！")
+        print("Webhook 註冊成功！")
         print(response.json())
     else:
-        print(f"❌ 註冊失敗: {response.status_code}")
+        print(f"註冊失敗: {response.status_code}")
         print(response.text)
         
 def list_webhooks():

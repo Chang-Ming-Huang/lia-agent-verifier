@@ -109,7 +109,7 @@ def get_registration_number_from_trello(trello_url: str) -> tuple:
     Returns:
         (登錄證字號, 卡片ID) 元組
     """
-    print(f"🔗 正在解析 Trello 卡片...")
+    print(f"正在解析 Trello 卡片...")
     
     # 提取卡片 ID
     card_id = extract_card_id_from_url(trello_url)
@@ -144,12 +144,12 @@ def add_comment_with_attachment_to_trello(card_id: str, comment_text: str, file_
     if not TRELLO_API_KEY or not TRELLO_TOKEN or "YOUR_TRELLO" in TRELLO_API_KEY:
         raise ValueError("請先設定 TRELLO_API_KEY 和 TRELLO_TOKEN 環境變數")
     
-    print(f"\n📤 正在將結果發布到 Trello 卡片...")
-    
+    print(f"\n正在將結果發布到 Trello 卡片...")
+
     # 1. 先上傳附件
     print(f"   上傳截圖...")
     attachment_url = f"https://api.trello.com/1/cards/{card_id}/attachments"
-    
+
     with open(file_path, 'rb') as f:
         files = {
             'file': (Path(file_path).name, f, 'image/png')
@@ -159,12 +159,12 @@ def add_comment_with_attachment_to_trello(card_id: str, comment_text: str, file_
             "token": TRELLO_TOKEN,
         }
         response = requests.post(attachment_url, params=params, files=files)
-    
+
     if response.status_code == 200:
-        print(f"   ✅ 截圖上傳成功")
+        print(f"   截圖上傳成功")
     else:
-        print(f"   ⚠️ 截圖上傳失敗: {response.status_code} - {response.text}")
-    
+        print(f"   截圖上傳失敗: {response.status_code} - {response.text}")
+
     # 2. 新增留言
     print(f"   新增留言: {comment_text}")
     comment_url = f"https://api.trello.com/1/cards/{card_id}/actions/comments"
@@ -173,13 +173,13 @@ def add_comment_with_attachment_to_trello(card_id: str, comment_text: str, file_
         "token": TRELLO_TOKEN,
         "text": comment_text
     }
-    
+
     response = requests.post(comment_url, params=params)
-    
+
     if response.status_code == 200:
-        print(f"   ✅ 留言新增成功")
+        print(f"   留言新增成功")
     else:
-        print(f"   ⚠️ 留言新增失敗: {response.status_code} - {response.text}")
+        print(f"   留言新增失敗: {response.status_code} - {response.text}")
 
 
 def add_comment_to_trello_card(card_id: str, comment_text: str) -> bool:
@@ -208,7 +208,7 @@ def add_comment_to_trello_card(card_id: str, comment_text: str) -> bool:
     if response.status_code == 200:
         return True
     else:
-        print(f"    ⚠️ 新增留言失敗: {response.status_code} - {response.text}")
+        print(f"    新增留言失敗: {response.status_code} - {response.text}")
         return False
 
 
@@ -241,7 +241,7 @@ def upload_attachment_to_trello_card(card_id: str, file_path: str) -> bool:
     if response.status_code == 200:
         return True
     else:
-        print(f"    ⚠️ 上傳附件失敗: {response.status_code} - {response.text}")
+        print(f"    上傳附件失敗: {response.status_code} - {response.text}")
         return False
 
 
@@ -253,7 +253,7 @@ def post_result_to_trello(card_id: str, screenshot_path: str):
         card_id: 卡片短 ID
         screenshot_path: 截圖檔案路徑
     """
-    print(f"\n📤 正在將結果發布到 Trello 卡片...")
+    print(f"\n正在將結果發布到 Trello 卡片...")
     
     # 取得檔名（不含路徑和副檔名）作為留言內容
     filename = Path(screenshot_path).stem
@@ -261,16 +261,16 @@ def post_result_to_trello(card_id: str, screenshot_path: str):
     # 上傳截圖附件
     print(f"   上傳截圖...")
     if upload_attachment_to_trello_card(card_id, screenshot_path):
-        print(f"   ✅ 截圖上傳成功")
+        print(f"   截圖上傳成功")
     else:
-        print(f"   ❌ 截圖上傳失敗")
+        print(f"   截圖上傳失敗")
     
     # 新增留言
     print(f"   新增留言: {filename}")
     if add_comment_to_trello_card(card_id, filename):
-        print(f"   ✅ 留言新增成功")
+        print(f"   留言新增成功")
     else:
-        print(f"   ❌ 留言新增失敗")
+        print(f"   留言新增失敗")
 
 
 class LIAQueryBot:
@@ -294,9 +294,9 @@ class LIAQueryBot:
             headless: 是否使用無頭模式（不顯示瀏覽器視窗）
         """
         self.headless = headless
-        print("🤖 正在初始化 OCR 引擎（首次執行可能需要下載模型，請稍候）...")
+        print("正在初始化 OCR 引擎（首次執行可能需要下載模型，請稍候）...")
         self.ocr = ddddocr.DdddOcr(show_ad=False)
-        print("✅ OCR 引擎初始化完成")
+        print("OCR 引擎初始化完成")
         self.playwright = None
         self.browser = None
         self.page = None
@@ -330,7 +330,7 @@ class LIAQueryBot:
         Returns:
             識別出的驗證碼文字
         """
-        print("    📷 正在擷取驗證碼圖片...")
+        print("    正在擷取驗證碼圖片...")
         
         # 等待驗證碼圖片載入
         time.sleep(0.5)
@@ -341,10 +341,10 @@ class LIAQueryBot:
         
         # 截取驗證碼圖片
         img_bytes = captcha_img.screenshot()
-        print(f"    📷 圖片大小: {len(img_bytes)} bytes")
+        print(f"    圖片大小: {len(img_bytes)} bytes")
         
         # 使用 ddddocr 識別
-        print("    🤖 正在識別驗證碼...")
+        print("    正在識別驗證碼...")
         result = self.ocr.classification(img_bytes)
         
         return result.lower().strip()
@@ -432,7 +432,7 @@ class LIAQueryBot:
             
             return None
         except Exception as e:
-            print(f"    ⚠️ 提取日期時發生錯誤: {e}")
+            print(f"    提取日期時發生錯誤: {e}")
             return None
     
     def _generate_screenshot_filename(self, registration_number: str, page_content: str) -> str:
@@ -448,14 +448,14 @@ class LIAQueryBot:
         """
         # 檢查是否有表格結果
         if 'formStyle02' not in page_content or '初次登錄日期' not in page_content:
-            print("    📋 判定結果: 無效的證號（無表格資料）")
+            print("    判定結果: 無效的證號（無表格資料）")
             return f"{registration_number}_無效的證號.png"
         
         # 提取初次登錄日期
         date_tuple = self._extract_registration_date()
         
         if date_tuple is None:
-            print("    📋 判定結果: 無效的證號（無法解析日期）")
+            print("    判定結果: 無效的證號（無法解析日期）")
             return f"{registration_number}_無效的證號.png"
         
         year, month, day = date_tuple
@@ -465,10 +465,10 @@ class LIAQueryBot:
         is_valid = self._is_within_one_year(year, month, day)
         
         if is_valid:
-            print(f"    📋 判定結果: 審核成功（初次登錄 {year}年{month}月{day}日，在一年內）")
+            print(f"    判定結果: 審核成功（初次登錄 {year}年{month}月{day}日，在一年內）")
             return f"{registration_number}_審核成功_{date_str}.png"
         else:
-            print(f"    📋 判定結果: 審核失敗（初次登錄 {year}年{month}月{day}日，超過一年）")
+            print(f"    判定結果: 審核失敗（初次登錄 {year}年{month}月{day}日，超過一年）")
             return f"{registration_number}_審核失敗_{date_str}.png"
         
     def query(self, registration_number: str, max_retries: int = 10) -> dict:
@@ -491,18 +491,18 @@ class LIAQueryBot:
         }
         
         # 導航到查詢頁面
-        print(f"🌐 正在前往查詢頁面...")
+        print(f"正在前往查詢頁面...")
         self.page.goto(self.URL, wait_until="networkidle")
-        print(f"✅ 頁面載入完成")
+        print(f"頁面載入完成")
         time.sleep(1)
         
         for attempt in range(1, max_retries + 1):
             result["attempts"] = attempt
-            print(f"\n📝 第 {attempt} 次嘗試...")
+            print(f"\n第 {attempt} 次嘗試...")
             
             # 識別驗證碼
             captcha_text = self._get_captcha_text()
-            print(f"🔍 識別到驗證碼: {captcha_text}")
+            print(f"識別到驗證碼: {captcha_text}")
             
             # 清空並填入登錄字號
             self.page.locator('#iusr').fill('')
@@ -517,13 +517,13 @@ class LIAQueryBot:
             def handle_dialog(dialog):
                 nonlocal dialog_message
                 dialog_message = dialog.message
-                print(f"    💬 收到對話框: {dialog_message}")
+                print(f"    收到對話框: {dialog_message}")
                 dialog.accept()
             
             self.page.once("dialog", handle_dialog)
             
             # 點擊查詢按鈕 (使用 #btn1)
-            print("    🖱️ 點擊查詢按鈕...")
+            print("    點擊查詢按鈕...")
             self.page.locator('#btn1').click()
             
             # 等待回應
@@ -531,7 +531,7 @@ class LIAQueryBot:
             
             # 檢查是否有驗證碼錯誤
             if dialog_message and "驗證碼錯誤" in dialog_message:
-                print(f"❌ 驗證碼錯誤，準備重試...")
+                print(f"驗證碼錯誤，準備重試...")
                 self._refresh_captcha()
                 continue
             
@@ -541,21 +541,21 @@ class LIAQueryBot:
             if "查無資料" in page_content:
                 result["success"] = True
                 result["message"] = "查無此登錄字號資料"
-                print(f"⚠️ 查無資料")
+                print(f"查無資料")
                 break
                 
             elif "登錄字號" in page_content and "所屬公司" in page_content:
                 # 查詢成功，有結果
                 result["success"] = True
                 result["message"] = "查詢成功"
-                print(f"✅ 查詢成功！")
+                print(f"查詢成功！")
                 break
                 
             elif "驗證碼錯誤" not in page_content:
                 # 可能成功了，截圖確認
                 result["success"] = True
                 result["message"] = "查詢完成，請查看截圖確認結果"
-                print(f"✅ 查詢完成")
+                print(f"查詢完成")
                 break
         
         # 截取結果截圖（根據查詢結果決定檔名）
@@ -563,7 +563,7 @@ class LIAQueryBot:
         screenshot_path = self._generate_screenshot_filename(registration_number, page_content)
         self.page.screenshot(path=screenshot_path, full_page=True)
         result["screenshot_path"] = screenshot_path
-        print(f"📸 截圖已儲存: {screenshot_path}")
+        print(f"截圖已儲存: {screenshot_path}")
         
         return result
 
@@ -586,7 +586,7 @@ def main():
         input_value = input("請輸入證號或是 Trello 卡片連結：").strip()
         
         if not input_value:
-            print("❌ 錯誤：未輸入任何內容")
+            print("錯誤：未輸入任何內容")
             sys.exit(1)
     
     print("=" * 60)
@@ -602,7 +602,7 @@ def main():
         try:
             registration_number, trello_card_id = get_registration_number_from_trello(input_value)
         except ValueError as e:
-            print(f"❌ 錯誤：{e}")
+            print(f"錯誤：{e}")
             if "TRELLO_API_KEY" in str(e) or "TRELLO_TOKEN" in str(e):
                 print("\n請在腳本開頭設定你的 Trello API 憑證：")
                 print('  TRELLO_API_KEY = "你的API Key"')
@@ -610,7 +610,7 @@ def main():
                 print("\n取得方式：https://trello.com/app-key")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Trello API 錯誤：{e}")
+            print(f"Trello API 錯誤：{e}")
             sys.exit(1)
     else:
         # 直接使用輸入的登錄字號
@@ -618,12 +618,12 @@ def main():
         
         # 驗證輸入格式（允許 8-10 位數字）
         if not registration_number.isdigit():
-            print(f"❌ 錯誤：登錄字號必須是數字")
+            print(f"錯誤：登錄字號必須是數字")
             print(f"   您輸入的是: {registration_number}")
             sys.exit(1)
         
         if len(registration_number) < 8 or len(registration_number) > 10:
-            print(f"❌ 錯誤：登錄字號必須是 8-10 位數字")
+            print(f"錯誤：登錄字號必須是 8-10 位數字")
             print(f"   您輸入的是: {registration_number} ({len(registration_number)} 位)")
             sys.exit(1)
         
@@ -631,12 +631,12 @@ def main():
         original_number = registration_number
         if len(registration_number) < 10:
             registration_number = registration_number.zfill(10)
-            print(f"ℹ️  自動補零: {original_number} → {registration_number}")
+            print(f"自動補零: {original_number} -> {registration_number}")
     
-    print(f"📋 查詢登錄字號: {registration_number}")
-    print(f"🖥️  顯示模式: {'無頭模式' if headless else '有頭模式（顯示瀏覽器）'}")
+    print(f"查詢登錄字號: {registration_number}")
+    print(f"顯示模式: {'無頭模式' if headless else '有頭模式（顯示瀏覽器）'}")
     if trello_card_id:
-        print(f"🔗 Trello 卡片: {trello_card_id}（完成後將回傳結果）")
+        print(f"Trello 卡片: {trello_card_id}（完成後將回傳結果）")
     print("=" * 60)
     
     # 執行查詢
@@ -647,10 +647,10 @@ def main():
     print("\n" + "=" * 60)
     print("查詢結果")
     print("=" * 60)
-    print(f"📋 登錄字號: {result['registration_number']}")
-    print(f"{ '✅' if result['success'] else '❌' } 狀態: {result['message']}")
-    print(f"🔄 嘗試次數: {result['attempts']}")
-    print(f"📸 截圖路徑: {result['screenshot_path']}")
+    print(f"登錄字號: {result['registration_number']}")
+    print(f"{'[OK]' if result['success'] else '[FAIL]'} 狀態: {result['message']}")
+    print(f"嘗試次數: {result['attempts']}")
+    print(f"截圖路徑: {result['screenshot_path']}")
     print("=" * 60)
     
     # 如果是 Trello 來源，回傳結果到卡片
@@ -664,7 +664,7 @@ def main():
                 result['screenshot_path']
             )
         except Exception as e:
-            print(f"⚠️ Trello 回傳失敗：{e}")
+            print(f"Trello 回傳失敗：{e}")
     
     return result
 

@@ -96,7 +96,7 @@ def resolve_trello_input(input_value: str) -> tuple:
 def _post_trello_comment(card_id: str, comment_text: str) -> bool:
     """內部函式：新增留言到 Trello 卡片"""
     if not TRELLO_API_KEY or not TRELLO_TOKEN:
-        print("⚠️ 未設定 Trello 憑證，無法回傳結果")
+        print("未設定 Trello 憑證，無法回傳結果")
         return False
 
     url = f"https://api.trello.com/1/cards/{card_id}/actions/comments"
@@ -107,10 +107,10 @@ def _post_trello_comment(card_id: str, comment_text: str) -> bool:
         if response.status_code == 200:
             return True
         else:
-            print(f"❌ Trello 留言失敗: {response.status_code} - {response.text}")
+            print(f"Trello 留言失敗: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        print(f"❌ Trello 留言發生錯誤: {e}")
+        print(f"Trello 留言發生錯誤: {e}")
         return False
 
 def upload_result_to_trello(card_id: str, screenshot_bytes: bytes, filename: str, result_msg: str):
@@ -118,7 +118,7 @@ def upload_result_to_trello(card_id: str, screenshot_bytes: bytes, filename: str
     上傳截圖附件並留言驗證結果摘要到 Trello 卡片
     """
     if not TRELLO_API_KEY or not TRELLO_TOKEN:
-        print("⚠️ 未設定 Trello 憑證，無法回傳結果")
+        print("未設定 Trello 憑證，無法回傳結果")
         return
 
     # 1. 上傳附件
@@ -129,17 +129,17 @@ def upload_result_to_trello(card_id: str, screenshot_bytes: bytes, filename: str
     try:
         response = requests.post(attachment_url, params=params, files=files)
         if response.status_code == 200:
-            print(f"✅ 截圖上傳成功")
+            print(f"截圖上傳成功")
             # 2. 留言驗證結果摘要
-            comment_text = f"✅ 查詢完成：{Path(filename).stem}\n{result_msg}"
+            comment_text = f"查詢完成：{Path(filename).stem}\n{result_msg}"
             if _post_trello_comment(card_id, comment_text):
-                print(f"✅ 驗證結果留言成功")
+                print(f"驗證結果留言成功")
             else:
-                print(f"❌ 驗證結果留言失敗")
+                print(f"驗證結果留言失敗")
         else:
-            print(f"❌ 截圖上傳失敗: {response.status_code} - {response.text}")
+            print(f"截圖上傳失敗: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Trello 上傳截圖發生錯誤: {e}")
+        print(f"Trello 上傳截圖發生錯誤: {e}")
 
 def post_email_template_to_trello(card_id: str, email_info: dict, contact_email: str = None):
     """
@@ -148,7 +148,7 @@ def post_email_template_to_trello(card_id: str, email_info: dict, contact_email:
     if not email_info:
         return
 
-    comment_text = f"📧 **建議回信範本：**\n\n" # 多加一個換行
+    comment_text = f"**建議回信範本：**\n\n" # 多加一個換行
     
     # 如果有抓到聯絡信箱，放在最上面
     if contact_email:
@@ -158,6 +158,6 @@ def post_email_template_to_trello(card_id: str, email_info: dict, contact_email:
     comment_text += f"**內文：**\n{email_info.get('body', '')}\n"
 
     if _post_trello_comment(card_id, comment_text):
-        print(f"✅ Email 範本留言成功")
+        print(f"Email 範本留言成功")
     else:
-        print(f"❌ Email 範本留言失敗")
+        print(f"Email 範本留言失敗")

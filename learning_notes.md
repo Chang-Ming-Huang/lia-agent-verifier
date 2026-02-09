@@ -125,7 +125,7 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     <li><code>upload_result_to_trello</code> 函式:
         <ul>
             <li>負責上傳截圖附件。</li>
-            <li>留言驗證結果摘要 (例如：「✅ 查詢完成：0113403577_審核通過_114_05_13」)。</li>
+            <li>留言驗證結果摘要 (例如：「查詢完成：0113403577_審核通過_114_05_13」)。</li>
         </ul>
     </li>
     <li>新增 <code>post_email_template_to_trello</code> 函式:

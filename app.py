@@ -30,21 +30,31 @@ def process_trello_card(card_id, card_url):
     """
     背景任務：處理 Trello 卡片的自動驗證
     """
-    print(f"🧵 [Background] 開始處理卡片: {card_id}")
+    print(f"[Background] 開始處理卡片: {card_id}")
     bot = None
     try:
         # 1. 從卡片解析證號和信箱
-        # 注意：因為是直接從 Webhook 觸發，我們其實已經有 card_id 了
-        # 但為了複用 trello_utils 的邏輯，我們傳入 URL 讓它解析
-        reg_no, _, contact_email = trello_utils.resolve_trello_input(card_url)
-        
-        print(f"🧵 [Background] 解析結果: 證號={reg_no}, 信箱={contact_email}")
+        try:
+            reg_no, _, contact_email = trello_utils.resolve_trello_input(card_url)
+        except ValueError as ve:
+            trello_utils._post_trello_comment(
+                card_id,
+                f"自動驗證失敗：{str(ve)}\n請確認卡片描述中的登錄證字號格式是否正確（應為 8-10 位數字）。"
+            )
+            print(f"[Background] 解析錯誤已回報 Trello: {ve}")
+            return
+
+        print(f"[Background] 解析結果: 證號={reg_no}, 信箱={contact_email}")
 
         # 2. 驗證證號格式
         if not reg_no.isdigit() or len(reg_no) < 8 or len(reg_no) > 10:
-            print(f"🧵 [Background] 證號格式錯誤，跳過")
+            trello_utils._post_trello_comment(
+                card_id,
+                f"自動驗證失敗：登錄證字號格式無效「{reg_no}」\n證號應為 8-10 位純數字，請確認後重新建立卡片。"
+            )
+            print(f"[Background] 證號格式錯誤已回報 Trello，跳過")
             return
-        
+
         if len(reg_no) < 10:
             reg_no = reg_no.zfill(10)
 
@@ -52,29 +62,40 @@ def process_trello_card(card_id, card_url):
         bot = LIAQueryBot(headless=True)
         bot.start()
         result = bot.perform_query(reg_no)
-        
+
         # 4. 回傳結果到 Trello
         if result['success'] and result.get('screenshot_bytes'):
             filename = result.get('suggested_filename', f'{reg_no}_result.png')
-            
+
             trello_utils.upload_result_to_trello(
-                card_id, 
-                result['screenshot_bytes'], 
+                card_id,
+                result['screenshot_bytes'],
                 filename,
                 result['msg']
             )
-            
+
             trello_utils.post_email_template_to_trello(
                 card_id,
                 result['email_info'],
                 contact_email
             )
-            print(f"🧵 [Background] 卡片 {card_id} 處理完成並回報")
+            print(f"[Background] 卡片 {card_id} 處理完成並回報")
         else:
-            print(f"🧵 [Background] 查詢失敗: {result['msg']}")
-            
+            trello_utils._post_trello_comment(
+                card_id,
+                f"自動驗證失敗：{result['msg']}\n請稍後重試或手動查詢。"
+            )
+            print(f"[Background] 查詢失敗已回報 Trello: {result['msg']}")
+
     except Exception as e:
-        print(f"🧵 [Background] 發生錯誤: {e}")
+        try:
+            trello_utils._post_trello_comment(
+                card_id,
+                f"自動驗證發生系統錯誤，請通知管理員或手動查詢。"
+            )
+        except:
+            pass
+        print(f"[Background] 發生錯誤: {e}")
     finally:
         if bot:
             bot.close()
@@ -107,7 +128,7 @@ def trello_webhook():
             
             # 檢查關鍵字
             if TRIGGER_KEYWORD in card_name:
-                print(f"🔔 偵測到關鍵字「{TRIGGER_KEYWORD}」，卡片 ID: {card_id}")
+                print(f"偵測到關鍵字「{TRIGGER_KEYWORD}」，卡片 ID: {card_id}")
                 
                 # 組出卡片網址
                 card_url = f"https://trello.com/c/{card_short_link}"
@@ -116,7 +137,7 @@ def trello_webhook():
                 thread = threading.Thread(target=process_trello_card, args=(card_id, card_url))
                 thread.start()
             else:
-                print(f"🔕 忽略卡片：{card_name} (未包含關鍵字)")
+                print(f"忽略卡片：{card_name} (未包含關鍵字)")
 
     except Exception as e:
         print(f"Webhook 處理錯誤: {e}")
@@ -198,7 +219,7 @@ def home():
         </div>
 
         <div class="info-section">
-            <p><strong>系統狀態:</strong> <span style="color: green;">● 線上</span></p>
+            <p><strong>系統狀態:</strong> <span style="color: green;">線上</span></p>
         </div>
     </div>
 
@@ -274,7 +295,7 @@ def home():
                         }}
                         
                         <div class="email-section">
-                            <h3>📧 回信範本</h3>
+                            <h3>回信範本</h3>
                             
                             <div class="email-box">
                                 <span class="email-label">信件標題：</span>

@@ -20,7 +20,7 @@ class LIAQueryBot:
     
     def __init__(self, headless: bool = True):
         self.headless = headless
-        print("🤖 初始化 OCR 引擎...")
+        print("初始化 OCR 引擎...")
         self.ocr = ddddocr.DdddOcr(show_ad=False)
         self.playwright = None
         self.browser = None
@@ -49,12 +49,12 @@ class LIAQueryBot:
         # 截圖並識別
         img_bytes = element.screenshot()
         result = self.ocr.classification(img_bytes)
-        print(f"    🔍 識別驗證碼: {result}")
+        print(f"    識別驗證碼: {result}")
         return result.lower().strip()
 
     def _refresh_captcha(self):
         """點擊刷新驗證碼"""
-        print("    🔄 刷新驗證碼...")
+        print("    刷新驗證碼...")
         self.page.locator('#btn3').click()
         time.sleep(1)
     
@@ -103,7 +103,7 @@ class LIAQueryBot:
             # 取得表格內容
             table = self.page.locator('table.formStyle02')
             if table.count() == 0:
-                print("    ⚠️ 找不到 formStyle02 表格")
+                print("    找不到 formStyle02 表格")
                 return None
             
             # 尋找包含「初次登錄日期」的列
@@ -114,10 +114,10 @@ class LIAQueryBot:
                     # 解析日期
                     return self._parse_roc_date(row_text)
             
-            print("    ⚠️ 找不到初次登錄日期")
+            print("    找不到初次登錄日期")
             return None
         except Exception as e:
-            print(f"    ⚠️ 提取日期時發生錯誤: {e}")
+            print(f"    提取日期時發生錯誤: {e}")
             return None
             
     def _generate_screenshot_filename(self, registration_number: str, result_status: str) -> str:
@@ -219,11 +219,11 @@ Finfo 客服團隊 敬上"""
             "email_info": None
         }
 
-        print(f"🌐 前往查詢頁面: {reg_no}")
+        print(f"前往查詢頁面: {reg_no}")
         self.page.goto(self.URL, wait_until='domcontentloaded')
         
         for attempt in range(1, max_retries + 1):
-            print(f"📝 第 {attempt} 次嘗試...")
+            print(f"第 {attempt} 次嘗試...")
             
             # 1. 識別驗證碼
             captcha_text = self._get_captcha_text()
@@ -237,7 +237,7 @@ Finfo 客服團隊 敬上"""
             def handle_dialog(dialog):
                 nonlocal dialog_message
                 dialog_message = dialog.message
-                print(f"    💬 攔截到對話框: {dialog_message}")
+                print(f"    攔截到對話框: {dialog_message}")
                 dialog.accept()
             
             self.page.once("dialog", handle_dialog)
@@ -251,7 +251,7 @@ Finfo 客服團隊 敬上"""
             
             # 5. 判斷結果
             if dialog_message and "驗證碼錯誤" in dialog_message:
-                print("    ❌ 驗證碼錯誤，重試中...")
+                print("    驗證碼錯誤，重試中...")
                 self._refresh_captcha()
                 dialog_message = None
                 continue
@@ -291,7 +291,7 @@ Finfo 客服團隊 敬上"""
             
             final_result["screenshot_bytes"] = screenshot_bytes
             final_result["suggested_filename"] = suggested_filename
-            print(f"📸 截圖已擷取 (記憶體中), 建議檔名: {suggested_filename}")
+            print(f"截圖已擷取 (記憶體中), 建議檔名: {suggested_filename}")
 
         # 生成 Email 範本
         final_result["email_info"] = self._generate_email_template(final_result["status"])
