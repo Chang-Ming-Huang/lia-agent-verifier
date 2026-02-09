@@ -52,6 +52,20 @@ def process_trello_card(card_id, card_url):
                 card_id,
                 f"自動驗證失敗：登錄證字號格式無效「{reg_no}」\n證號應為 8-10 位純數字，請確認後重新建立卡片。"
             )
+            # 同時發布 email 範本，讓客服可以直接複製回信
+            email_info = {
+                "subject": "Finfo 有收到您的年繳方案申請，想詢問您的登錄證字號",
+                "body": (
+                    "您好,\n\n"
+                    "這裡是 Finfo 客服團隊的審核專員，感謝您申請年繳方案。\n"
+                    "根據您提供的登錄證字號，於 壽險公會 無法查詢到資格，\n"
+                    "請再次確認提供的資料是否正確，再次感謝您的申請與支持。\n\n"
+                    "如有任何問題，隨時回覆此信與我們聯繫。\n\n"
+                    "如果有其他任何網站上的操作問題，也都歡迎您在此封信件中一併提出，我們會盡快協助，感謝您！\n\n"
+                    "Finfo 客服團隊 敬上"
+                )
+            }
+            trello_utils.post_email_template_to_trello(card_id, email_info, contact_email)
             print(f"[Background] 證號格式錯誤已回報 Trello，跳過")
             return
 

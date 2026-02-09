@@ -35,21 +35,28 @@ def get_trello_card_description(card_id: str) -> str:
 def extract_registration_number_from_text(text: str) -> str:
     """從文字中提取登錄證字號"""
     patterns = [
+        # 純數字模式 (優先匹配)
         r'登錄證字號[：:]\s*(\d{8,10})',
         r'登錄字號[：:]\s*(\d{8,10})',
         r'證號[：:]\s*(\d{8,10})',
         r'0\d{9}', # 嘗試直接匹配 10 位數 (0開頭)
+        # 英數混合模式 (fallback，例如 A123456789)
+        r'登錄證字號[：:]\s*([A-Za-z0-9]{6,10})',
+        r'登錄字號[：:]\s*([A-Za-z0-9]{6,10})',
+        r'證號[：:]\s*([A-Za-z0-9]{6,10})',
     ]
-    
+
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            # 如果 pattern 本身就包含數字群組
             if match.groups():
-                return match.group(1).zfill(10)
-            # 如果 pattern 是整個匹配 (如 0\d{9})
+                value = match.group(1)
             else:
-                return match.group(0).zfill(10)
+                value = match.group(0)
+            # 只對純數字做 zfill，非數字值不補零
+            if value.isdigit():
+                return value.zfill(10)
+            return value
     return None
 
 def extract_email_from_text(text: str) -> str:
