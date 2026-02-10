@@ -9,8 +9,9 @@ API_KEY = os.environ.get("TRELLO_API_KEY")
 TOKEN = os.environ.get("TRELLO_TOKEN")
 BOARD_ID = os.environ.get("TRELLO_BOARD_ID")
 
-# 請填入您的 Render 完整網址 (不要有尾隨的 slash)
-CALLBACK_URL = "https://render-test-docker-4xjz.onrender.com/webhook/trello"
+# 從環境變數讀取 BASE_URL，預設 fallback 到測試環境
+BASE_URL = os.environ.get("BASE_URL", "https://render-test-docker-4xjz.onrender.com")
+CALLBACK_URL = f"{BASE_URL}/webhook/trello"
 
 def register_webhook():
     if not API_KEY or not TOKEN or not BOARD_ID:

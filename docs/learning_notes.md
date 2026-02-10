@@ -19,7 +19,7 @@
 ## 2. 架構設計
 
 ### 2.1 核心模組
-*   **`app.py` (Flask)**: 主程式，組裝 Blueprints，提供 Web UI (`/`, `/check`) 及測試路由 (`/ocr`, `/screenshot`)。
+*   **`app.py` (Flask)**: App Factory 入口，透過 `create_app()` 組裝 Blueprints，本身不包含路由。
 *   **`lia_bot.py` (Playwright + ddddocr)**: 核心爬蟲邏輯，負責瀏覽器操作、驗證碼識別、結果解析、Email 範本生成。各流程共用此模組。
 *   **`trello_flow/` (Blueprint)**: Trello Webhook 自動化流程。
     *   `routes.py`: `/webhook/trello` 路由 + `process_trello_card()` 背景任務。
@@ -144,25 +144,19 @@ CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
     </li>
 </ul>
 
-<h3>5.3 <code>app.py</code> 主程式 (Blueprint 架構)</h3>
+<h3>5.3 <code>app.py</code> 主程式 (App Factory + Blueprint 架構)</h3>
 <ul>
-    <li>引入 <code>lia_bot</code>、<code>trello_flow.trello_utils</code>，並註冊兩個 Blueprint：<code>trello_bp</code> (Trello 流程) 和 <code>api_bp</code> (API 流程)。</li>
-    <li>**<code>/check</code> 路由** (保留在 app.py): 接收 <code>id</code> (登錄字號或 Trello 網址) 參數。
-        <ol>
-            <li>透過 <code>trello_flow.trello_utils.resolve_trello_input()</code> 解析輸入。</li>
-            <li>呼叫 <code>LIAQueryBot</code> 執行查詢。</li>
-            <li>若有 Trello 卡片 ID，呼叫 <code>trello_flow.trello_utils</code> 上傳結果與 Email 範本。</li>
-            <li>回傳 JSON (Base64 圖片 + Email 範本)。</li>
-        </ol>
-    </li>
-    <li>**<code>/webhook/trello</code> 路由** (已移至 <code>trello_flow/routes.py</code>): 透過 Blueprint 註冊。</li>
-    <li>**<code>/api/verify-agent-license</code> 路由** (已移至 <code>api_flow/routes.py</code>): 透過 Blueprint 註冊。</li>
-    <li>**<code>/</code> 首頁路由** (保留在 app.py): 提供包含輸入框、按鈕、Loading 動畫、結果顯示區的互動式 Web UI。
+    <li>採用 <strong>App Factory 模式</strong>：透過 <code>create_app()</code> 函式建立 Flask 應用程式，取代直接在模組層級建立 <code>app</code> 實例。</li>
+    <li>Web UI 路由 (<code>/</code>, <code>/check</code>) 獨立至 <code>web_flow/</code> Blueprint，<code>app.py</code> 只負責組裝。</li>
+    <li>透過環境變數 <code>ENABLED_MODULES</code> 控制載入哪些 Blueprint（預設全載入），支援按需啟用模組。</li>
+    <li>三個 Blueprint：
         <ul>
-            <li>介面中提供測試範例。</li>
-            <li>若為 Trello 網址輸入，顯示「已將驗證結果回覆在票上」的提示文字及「回到 Trello 票」按鈕。</li>
+            <li><code>web_bp</code> (<code>web_flow/</code>): Web UI 介面與 <code>/check</code> 查詢路由。</li>
+            <li><code>trello_bp</code> (<code>trello_flow/</code>): Trello Webhook 自動化流程。</li>
+            <li><code>api_bp</code> (<code>api_flow/</code>): REST API 驗證端點。</li>
         </ul>
     </li>
+    <li>入口點 <code>app = create_app()</code> 供 gunicorn 使用。</li>
 </ul>
 
 <h3>5.4 <code>trello_flow/register_webhook.py</code></h3>

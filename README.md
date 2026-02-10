@@ -37,8 +37,8 @@
 ### 2. 下載專案
 
 ```bash
-git clone https://github.com/Chang-Ming-Huang/render-test.git
-cd render-test
+git clone https://github.com/Chang-Ming-Huang/lia-agent-verifier.git
+cd lia-agent-verifier
 ```
 
 ### 3. 建立虛擬環境與安裝套件
@@ -98,7 +98,7 @@ python app.py
 ## 專案結構
 
 ```
-render-test/
+lia-agent-verifier/
 ├── app.py                          # Flask 主程式 (Web UI + /check 路由，組裝 Blueprints)
 ├── lia_bot.py                      # 核心模組：Playwright 爬蟲與 ddddocr 驗證 (共用)
 │
