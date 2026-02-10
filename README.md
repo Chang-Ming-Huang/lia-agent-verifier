@@ -43,19 +43,26 @@ cd lia-agent-verifier
 
 ### 3. 建立虛擬環境與安裝套件
 
+> [!NOTE]
+> 本專案使用 `ddddocr==1.5.6`，此版本兼容 Python 3.9 ~ 3.12，且修正了 1.6.0 版本在 Python 3.12 上的安裝問題。請勿随意升級 `ddddocr` 版本。
+
 ```bash
 # 建立虛擬環境
 python -m venv venv
 
+
 # 啟動虛擬環境 (Windows)
 .\venv\Scripts\Activate.ps1
-# Mac/Linux: source venv/bin/activate
+# Mac/Linux: 
+source venv/bin/activate
 
 # 安裝依賴套件
 pip install -r requirements.txt
 ```
 
-### 4. 設定環境變數
+### 4. 設定環境變數 (非必要，可跳過)
+
+若使用 Trello 整合功能才需設定環境變數，若 production 環境沒有用到 Trello，則可跳過此步驟。
 
 在專案根目錄建立 `.env` 檔案，填入以下資訊：
 
