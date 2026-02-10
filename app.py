@@ -8,8 +8,8 @@ def create_app():
     from api_flow import api_bp
     app.register_blueprint(api_bp)
 
-    # 實驗用模組 — 僅在非 production 環境載入
-    if os.environ.get('FLASK_ENV') != 'production':
+    # 實驗用模組 — 僅在 staging 環境載入
+    if os.environ.get('FLASK_ENV') == 'staging':
         from trello_flow import trello_bp
         from web_flow import web_bp
         app.register_blueprint(trello_bp)

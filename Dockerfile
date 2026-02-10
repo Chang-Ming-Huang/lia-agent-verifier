@@ -23,7 +23,7 @@ COPY . .
 # 設定環境變數 (防止 Python 產生 .pyc 檔)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_ENV=production
+
 
 # 啟動 Gunicorn 伺服器
 # Render 會自動提供 PORT 環境變數，我們讓 Gunicorn 監聽該 Port
