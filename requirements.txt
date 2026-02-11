@@ -1,6 +1,6 @@
 Flask
 gunicorn
-playwright
+playwright==1.48.0
 ddddocr==1.5.6
 requests
 python-dotenv
