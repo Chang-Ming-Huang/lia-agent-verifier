@@ -230,7 +230,16 @@ Finfo 客服團隊 敬上"""
         }
 
         print(f"前往查詢頁面: {reg_no}")
-        self.page.goto(self.URL, wait_until='domcontentloaded', timeout=60000)
+        for nav_attempt in range(3):
+            try:
+                self.page.goto(self.URL, wait_until='domcontentloaded', timeout=60000)
+                break
+            except Exception as e:
+                if "ERR_NAME_NOT_RESOLVED" in str(e) and nav_attempt < 2:
+                    print(f"    DNS 解析失敗，3秒後重試... ({nav_attempt + 1}/3)")
+                    time.sleep(3)
+                    continue
+                raise
         
         for attempt in range(1, max_retries + 1):
             print(f"第 {attempt} 次嘗試...")
