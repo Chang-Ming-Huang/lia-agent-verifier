@@ -24,7 +24,7 @@ def verify_agent_license():
     try:
         bot = LIAQueryBot(headless=True)
         bot.start()
-        result = bot.perform_query(reg_no)
+        result = bot.perform_query(reg_no, skip_screenshot=True)
 
         status = result.get('status')
         if status == 'found_valid':

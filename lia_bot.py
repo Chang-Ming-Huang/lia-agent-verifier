@@ -2,8 +2,11 @@ from playwright.sync_api import sync_playwright
 import ddddocr
 import time
 import re
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path # 引入 Path 模組
+
+_browser_lock = threading.Lock()
 
 class LIAQueryBot:
     """壽險公會業務員登錄查詢機器人 (核心邏輯)"""
@@ -27,17 +30,24 @@ class LIAQueryBot:
         self.page = None
         
     def start(self):
-        """啟動瀏覽器"""
+        """啟動瀏覽器（同時取得全域鎖，確保僅一個 Chromium 實例）"""
+        _browser_lock.acquire()
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(headless=self.headless)
         self.page = self.browser.new_page()
         
     def close(self):
-        """關閉瀏覽器"""
-        if self.browser:
-            self.browser.close()
-        if self.playwright:
-            self.playwright.stop()
+        """關閉瀏覽器並釋放全域鎖"""
+        try:
+            if self.browser:
+                self.browser.close()
+            if self.playwright:
+                self.playwright.stop()
+            self.page = None
+            self.browser = None
+            self.playwright = None
+        finally:
+            _browser_lock.release()
 
     def _get_captcha_text(self) -> str:
         """擷取並識別驗證碼"""
@@ -209,7 +219,7 @@ Finfo 客服團隊 敬上"""
         else:
             return templates["not_found"]
 
-    def perform_query(self, reg_no: str, max_retries=5):
+    def perform_query(self, reg_no: str, max_retries=5, skip_screenshot=False):
         """執行查詢動作 (含驗證碼重試機制)"""
         final_result = {
             "success": False,
@@ -283,7 +293,7 @@ Finfo 客服團隊 敬上"""
             break
         
         # 截取最終結果頁面 (記憶體截圖)
-        if final_result["success"]:
+        if final_result["success"] and not skip_screenshot:
             suggested_filename = self._generate_screenshot_filename(reg_no, final_result["status"])
             # 截取最終結果頁面 (記憶體截圖)，只截取頁面上方 60%
             page_height = self.page.evaluate("document.body.scrollHeight")
@@ -292,7 +302,7 @@ Finfo 客服團隊 敬上"""
             screenshot_bytes = self.page.screenshot(
                 clip={"x": 0, "y": 0, "width": self.page.viewport_size['width'], "height": clip_height}
             )
-            
+
             final_result["screenshot_bytes"] = screenshot_bytes
             final_result["suggested_filename"] = suggested_filename
             print(f"截圖已擷取 (記憶體中), 建議檔名: {suggested_filename}")
