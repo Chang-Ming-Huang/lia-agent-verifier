@@ -35,7 +35,16 @@ class LIAQueryBot:
         """啟動瀏覽器（同時取得全域鎖，確保僅一個 Chromium 實例）"""
         _browser_lock.acquire()
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=self.headless)
+        self.browser = self.playwright.chromium.launch(
+            headless=self.headless,
+            args=[
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-sandbox',
+                '--disable-extensions',
+                '--single-process',
+            ]
+        )
         self.page = self.browser.new_page()
         
     def close(self):
