@@ -220,7 +220,7 @@ Finfo 客服團隊 敬上"""
         }
 
         print(f"前往查詢頁面: {reg_no}")
-        self.page.goto(self.URL, wait_until='domcontentloaded')
+        self.page.goto(self.URL, wait_until='domcontentloaded', timeout=60000)
         
         for attempt in range(1, max_retries + 1):
             print(f"第 {attempt} 次嘗試...")
@@ -246,7 +246,7 @@ Finfo 客服團隊 敬上"""
             self.page.locator('#btn1').click()
             
             # 等待處理結果
-            self.page.wait_for_load_state('networkidle')
+            self.page.wait_for_load_state('networkidle', timeout=60000)
             time.sleep(1)
             
             # 5. 判斷結果

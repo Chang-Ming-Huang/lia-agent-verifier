@@ -27,4 +27,4 @@ ENV PYTHONUNBUFFERED=1
 
 # 啟動 Gunicorn 伺服器
 # Render 會自動提供 PORT 環境變數，我們讓 Gunicorn 監聽該 Port
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT app:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 app:app"]
