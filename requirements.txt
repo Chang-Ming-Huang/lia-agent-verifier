@@ -1,6 +1,6 @@
-Flask==3.1.2
-gunicorn==23.0.0
-playwright==1.56.0
+Flask
+gunicorn
+playwright
 ddddocr==1.5.6
-requests==2.32.5
-python-dotenv==1.2.1
+requests
+python-dotenv
