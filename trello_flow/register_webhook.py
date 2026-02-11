@@ -10,7 +10,7 @@ TOKEN = os.environ.get("TRELLO_TOKEN")
 BOARD_ID = os.environ.get("TRELLO_BOARD_ID")
 
 # 從環境變數讀取 BASE_URL，預設 fallback 到測試環境
-BASE_URL = os.environ.get("BASE_URL", "https://render-test-docker-4xjz.onrender.com")
+BASE_URL = os.environ.get("BASE_URL", "https://lia-agent-verifier.onrender.com")
 CALLBACK_URL = f"{BASE_URL}/webhook/trello"
 
 def register_webhook():

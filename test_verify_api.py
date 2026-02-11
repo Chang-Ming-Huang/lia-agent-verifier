@@ -11,7 +11,7 @@ import sys
 import json
 import requests
 
-RENDER_URL = "https://render-test-docker-4xjz.onrender.com/api/verify-agent-license"
+RENDER_URL = "https://lia-agent-verifier.onrender.com/api/verify-agent-license"
 FINFO_PRODUCTION_URL = "https://finfo.tw/api/verify-agent-license"
 LOCAL_URL = "http://localhost:5000/api/verify-agent-license"
 TIMEOUT = 180  # 3 minutes for Render cold start
