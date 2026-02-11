@@ -11,6 +11,8 @@ _browser_lock = threading.Lock()
 class LIAQueryBot:
     """壽險公會業務員登錄查詢機器人 (核心邏輯)"""
     
+    DNS_MAX_RETRIES = 5
+
     URL = (
         "https://public.liaroc.org.tw/lia-public/DIS/Servlet/RD?"
         "returnUrl=..%2F..%2FindexUsr.jsp&xml=%3C%3Fxml+version%3D%221.0%22+"
@@ -230,17 +232,17 @@ Finfo 客服團隊 敬上"""
         }
 
         print(f"前往查詢頁面: {reg_no}")
-        for nav_attempt in range(3):
+        for nav_attempt in range(self.DNS_MAX_RETRIES):
             try:
                 self.page.goto(self.URL, wait_until='domcontentloaded', timeout=60000)
                 break
             except Exception as e:
                 if "ERR_NAME_NOT_RESOLVED" in str(e):
-                    print(f"    DNS 解析失敗，3秒後重試... ({nav_attempt + 1}/3)")
-                    if nav_attempt < 2:
+                    print(f"    DNS 解析失敗，3秒後重試... ({nav_attempt + 1}/{self.DNS_MAX_RETRIES})")
+                    if nav_attempt < self.DNS_MAX_RETRIES - 1:
                         time.sleep(3)
                         continue
-                    print("    DNS 解析連續 3 次失敗，無法連接至壽險公會網站")
+                    print(f"    DNS 解析連續 {self.DNS_MAX_RETRIES} 次失敗，無法連接至壽險公會網站")
                 raise
         
         for attempt in range(1, max_retries + 1):
