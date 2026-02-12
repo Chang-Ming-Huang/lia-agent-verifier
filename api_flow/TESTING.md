@@ -81,7 +81,7 @@ python test_verify_api.py --production
 ### 方法 B：使用 curl
 
 ```bash
-curl -X POST https://finfo.tw/api/verify-agent-license -H "Content-Type: application/json" -d "{\"license_number\": \"0113403577\"}"
+curl -X POST https://agent-verify.finfo.tw/api/verify-agent-license -H "Content-Type: application/json" -d "{\"license_number\": \"0113403577\"}"
 ```
 
 ---
