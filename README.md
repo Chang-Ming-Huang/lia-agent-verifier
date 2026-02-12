@@ -94,13 +94,31 @@ python app.py
 
 本專案已包含優化過的 `Dockerfile`，可直接部署至支援 Docker 的雲端平台（如 Render, Railway, Fly.io）。
 
+### 本地建置與執行
+
+```bash
+# 建置 Docker Image
+docker build -t lia-agent-verifier .
+
+# 執行容器 (本地測試)
+docker run -p 10000:10000 -e PORT=10000 lia-agent-verifier
+```
+
+啟動後瀏覽器打開 `http://localhost:10000` 即可使用。
+
 ### Render 部署注意事項
 
 1.  在 Render 建立新的 **Web Service**。
 2.  連結此 GitHub Repository。
 3.  Runtime 選擇 **Docker**。
 4.  在 Environment Variables 設定頁面填入上述的環境變數 (`TRELLO_API_KEY` 等)。
-5.  部署完成後，Render 會自動執行 `gunicorn` 啟動服務。
+5.  Start Command 設定為：
+    ```
+    gunicorn app:app --bind 0.0.0.0:10000 --timeout 120 --workers 1 --preload
+    ```
+    *   `--timeout 120`：Playwright 爬蟲查詢較耗時，預設 30 秒會 timeout。
+    *   `--workers 1`：Chromium 記憶體消耗大，單 worker 避免 OOM。
+    *   `--preload`：預先載入應用程式，可提早發現 import 錯誤並減少記憶體用量。
 
 ## 專案結構
 
