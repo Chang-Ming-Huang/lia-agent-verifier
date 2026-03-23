@@ -165,6 +165,8 @@ class LIAQueryBot:
                 return f"{base_name}_資格不符_{date_str}.png"
             else:
                 return f"{base_name}_資格不符_日期未知.png"
+        elif result_status == "not_registered":
+            return f"{base_name}_未辦理登錄.png"
         else: # unknown 或 error
             return f"{base_name}_無效證號.png"
 
@@ -203,6 +205,22 @@ Finfo 客服團隊 敬上"""
 也就是要在 {one_year_ago_str} 之後登錄的新進業務員，會是這次新進業務年繳方案的測試對象。
 
 根據您提供的資料，您的登錄日期是比較早期的，不符合針對新進業務的資格，不好意思。
+
+若您對年繳方案有興趣，可以等之後 Finfo 正式推出年繳方案後再填寫即可，感謝您的來信申請。
+
+Finfo 客服團隊 敬上"""
+            },
+            "not_registered": {
+                "subject": "Finfo 有收到您的年繳方案申請，您的登錄證字號目前為未辦理登錄狀態",
+                "body": f"""您好,
+
+這裡是 Finfo 客服團隊的審核專員，感謝您申請年繳方案。
+
+目前年繳方案屬於測試階段，第一階段先開放給新進一年的業務員。
+
+也就是要在 {one_year_ago_str} 之後登錄的新進業務員，會是這次新進業務年繳方案的測試對象。
+
+根據您提供的登錄證字號，於壽險公會系統查詢結果為「未辦理登錄」，表示該證號目前未登記於任何公司，不符合針對新進業務的資格，不好意思。
 
 若您對年繳方案有興趣，可以等之後 Finfo 正式推出年繳方案後再填寫即可，感謝您的來信申請。
 
@@ -300,15 +318,18 @@ Finfo 客服團隊 敬上"""
                 break
                 
             elif "formStyle02" in page_content and "初次登錄日期" in page_content:
-                date_tuple = self._extract_registration_date()
-                if date_tuple:
-                    year, month, day = date_tuple
-                    if self._is_within_one_year(year, month, day):
-                        final_result.update({"success": True, "status": "found_valid", "msg": f"審核成功（初次登錄 {year}年{month}月{day}日，在一年內）", "date": f"{year}_{month:02d}_{day:02d}"})
-                    else:
-                        final_result.update({"success": True, "status": "found_invalid", "msg": f"審核失敗（初次登錄 {year}年{month}月{day}日，超過一年）", "date": f"{year}_{month:02d}_{day:02d}"})
+                if "未辦理登錄" in page_content:
+                    final_result.update({"success": True, "status": "not_registered", "msg": "未辦理登錄（未登記於任何公司）"})
                 else:
-                    final_result.update({"success": True, "status": "found_undetermined", "msg": "找到資料但無法解析日期"})
+                    date_tuple = self._extract_registration_date()
+                    if date_tuple:
+                        year, month, day = date_tuple
+                        if self._is_within_one_year(year, month, day):
+                            final_result.update({"success": True, "status": "found_valid", "msg": f"審核成功（初次登錄 {year}年{month}月{day}日，在一年內）", "date": f"{year}_{month:02d}_{day:02d}"})
+                        else:
+                            final_result.update({"success": True, "status": "found_invalid", "msg": f"審核失敗（初次登錄 {year}年{month}月{day}日，超過一年）", "date": f"{year}_{month:02d}_{day:02d}"})
+                    else:
+                        final_result.update({"success": True, "status": "found_undetermined", "msg": "找到資料但無法解析日期"})
                 break
             
             final_result.update({"success": True, "status": "unknown", "msg": "表單已送出，無明確結果或非預期頁面"})

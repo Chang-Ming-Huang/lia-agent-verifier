@@ -31,6 +31,8 @@ def verify_agent_license():
             return jsonify({"status_code": 0, "message": "Verification passed: New agent identified."})
         elif status == 'found_invalid':
             return jsonify({"status_code": 1, "message": "Failed: Not a new agent (seniority > 1 year)."})
+        elif status == 'not_registered':
+            return jsonify({"status_code": 1, "message": "Failed: Not a new agent (license not registered)."})
         elif status == 'not_found':
             return jsonify({"status_code": 3, "message": "Failed: License number not found in database."})
         else:

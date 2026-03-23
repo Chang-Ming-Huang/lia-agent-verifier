@@ -105,17 +105,22 @@ def main():
             True, 200, 3,  # May return 999 if third-party service is down
         ),
         (
-            "4. Invalid format - alphanumeric (A123456789)",
+            "4. Not registered (0104300989)",
+            {"license_number": "0104300989"},
+            True, 200, 1,
+        ),
+        (
+            "5. Invalid format - alphanumeric (A123456789)",
             {"license_number": "A123456789"},
             True, 200, 2,
         ),
         (
-            "5. Empty JSON body ({})",
+            "6. Empty JSON body ({})",
             {},
             True, 200, 2,
         ),
         (
-            "6. Non-JSON body",
+            "7. Non-JSON body",
             "not json",
             False, 400, 2,
         ),
